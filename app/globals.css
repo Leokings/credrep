@@ -356,10 +356,13 @@ a {
 .closing-button {
   align-items: center;
   background: var(--acid);
+  border: 0;
   color: var(--ink-deep);
+  cursor: pointer;
   display: inline-flex;
   font-size: 13px;
   font-weight: 850;
+  font-family: inherit;
   gap: 18px;
   padding: 16px 18px;
   text-transform: uppercase;
@@ -581,6 +584,27 @@ a {
   color: var(--ink);
 }
 
+.claim-heading-actions {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.make-claim-button {
+  background: var(--ink);
+  border: 1px solid var(--ink);
+  color: white;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  padding: 12px 15px;
+  text-transform: uppercase;
+}
+
+.make-claim-button:hover { background: var(--mint); border-color: var(--mint); }
+
 .market-grid {
   display: grid;
   gap: 18px;
@@ -646,6 +670,50 @@ a {
   margin: 20px 0 24px;
   max-width: 560px;
 }
+
+.claim-card { min-height: 440px; }
+
+.claim-card h3 {
+  font-size: clamp(22px, 2vw, 29px);
+  margin: 18px 0;
+}
+
+.claim-owner {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 9px;
+  grid-template-columns: auto auto 1fr;
+  margin-top: 18px;
+  padding-bottom: 14px;
+}
+
+.claim-owner > span:nth-child(2) { display: flex; flex-direction: column; }
+.claim-owner strong { font-size: 11px; }
+.claim-owner small { color: rgba(16, 43, 39, 0.48); font-size: 9px; }
+.claim-owner i { color: rgba(16, 43, 39, 0.48); font-size: 10px; font-style: normal; justify-self: end; text-align: right; }
+
+.claim-mechanic {
+  background: var(--paper-deep);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin-bottom: 14px;
+}
+
+.claim-mechanic > div { display: flex; flex-direction: column; gap: 5px; padding: 13px; }
+.claim-mechanic > div + div { border-left: 1px solid var(--line); }
+.claim-mechanic span, .claim-mechanic small { color: rgba(16, 43, 39, 0.48); font-family: var(--font-geist-mono), monospace; font-size: 7px; text-transform: uppercase; }
+.claim-mechanic strong { font-size: 11px; }
+.claim-mechanic small { color: var(--mint); }
+
+.claim-rules { color: rgba(16, 43, 39, 0.58); font-size: 10px; margin-bottom: 16px; }
+.claim-rules summary { align-items: center; cursor: pointer; display: flex; font-weight: 750; gap: 6px; list-style: none; }
+.claim-rules summary::-webkit-details-marker { display: none; }
+.claim-rules summary svg { color: var(--mint); height: 15px; width: 15px; }
+.claim-rules p { line-height: 1.55; margin: 9px 0 0 21px; }
+.claim-status-won { color: var(--mint); }
+.claim-status-lost { color: var(--red); }
+.claim-status-void { color: rgba(16, 43, 39, 0.48); }
 
 .probability-labels {
   display: flex;
@@ -765,6 +833,9 @@ a {
   height: 12px;
   width: 12px;
 }
+
+.market-card-footer a { color: inherit; margin-left: auto; }
+.market-card-footer a:hover { color: var(--ink); }
 
 .signal-up { color: #24715e !important; }
 .signal-down { color: var(--red) !important; }
@@ -1083,6 +1154,39 @@ a {
 .commit-button:disabled { cursor: wait; opacity: 0.7; }
 .commit-button svg { height: 17px; width: 17px; }
 
+.claim-modal { max-width: 760px; }
+
+.claim-form {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 22px;
+}
+
+.claim-form label { display: flex; flex-direction: column; gap: 7px; }
+.claim-form label > span { font-size: 10px; font-weight: 800; }
+.claim-form input,
+.claim-form select,
+.claim-form textarea {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  outline: 0;
+  padding: 11px 12px;
+  width: 100%;
+}
+.claim-form input:focus,
+.claim-form select:focus,
+.claim-form textarea:focus { border-color: var(--mint); box-shadow: 0 0 0 2px rgba(46, 141, 120, 0.12); }
+.claim-form textarea { line-height: 1.5; resize: vertical; }
+.claim-form small { color: rgba(16, 43, 39, 0.45); font-family: var(--font-geist-mono), monospace; font-size: 7px; }
+.claim-form-wide { grid-column: 1 / -1; }
+.claim-summary strong { font-size: 10px; }
+.link-button { background: transparent; border-left: 0; border-right: 0; border-top: 0; color: inherit; cursor: pointer; font-family: inherit; }
+
 @media (max-width: 1050px) {
   .topbar { grid-template-columns: auto 1fr; }
   .desktop-nav { display: none; }
@@ -1112,10 +1216,16 @@ a {
   .ticker span::after { display: none; }
   .markets-section, .leaderboard-section, .how-section { padding: 72px 20px; }
   .section-heading-row { align-items: flex-start; flex-direction: column; }
+  .claim-heading-actions { align-items: flex-start; max-width: 100%; }
   .market-filters { max-width: 100%; overflow-x: auto; }
   .market-filters button { white-space: nowrap; }
   .market-grid { grid-template-columns: 1fr; }
   .market-card-footer { flex-wrap: wrap; gap: 9px 16px; padding-bottom: 10px; padding-top: 10px; }
+  .market-card-footer a { margin-left: 0; }
+  .claim-owner { grid-template-columns: auto 1fr; }
+  .claim-owner i { grid-column: 1 / -1; justify-self: start; text-align: left; }
+  .claim-mechanic { grid-template-columns: 1fr; }
+  .claim-mechanic > div + div { border-left: 0; border-top: 1px solid var(--line); }
   .reputation-section { padding: 80px 20px; }
   .profile-card { box-shadow: 8px 8px 0 rgba(215, 255, 79, 0.16); padding: 18px; }
   .profile-card-top { align-items: flex-start; flex-direction: column; gap: 15px; }
@@ -1132,6 +1242,8 @@ a {
   .site-footer { align-items: flex-start; grid-template-columns: 1fr; padding: 32px 20px; }
   .site-footer div { flex-wrap: wrap; }
   .forecast-modal { padding: 26px 18px 22px; }
+  .claim-form { grid-template-columns: 1fr; }
+  .claim-form-wide { grid-column: auto; }
   .forecast-summary { grid-template-columns: 1fr; }
   .forecast-summary div + div { border-left: 0; border-top: 1px solid var(--line); }
 }

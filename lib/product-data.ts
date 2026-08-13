@@ -1,32 +1,43 @@
-export type MarketStatus = "OPEN" | "LOCKED" | "RESOLVING" | "FINALIZED";
-export type Outcome = "YES" | "NO";
+export type ClaimStatus = "OPEN" | "RESOLVING" | "WON" | "LOST" | "VOID";
+export type ClaimOutcome = "TRUE" | "FALSE" | "VOID";
 
-export type Market = {
+export type Claim = {
   id: string;
-  eyebrow: string;
-  question: string;
+  ownerId: string;
+  ownerName: string;
+  ownerHandle: string;
+  statement: string;
   category: string;
-  status: MarketStatus;
-  lockAt: string;
+  status: ClaimStatus;
+  stake: number;
   resolutionAt: string;
   sourceLabel: string;
+  sourceUrl: string;
   rules: string;
-  yesProbability: number;
-  volume: number;
-  forecasters: number;
-  signal: string;
+  createdAt: string;
+  outcome: ClaimOutcome | null;
+};
+
+export type ClaimInput = {
+  statement: string;
+  category: string;
+  stake: number;
+  resolutionAt: string;
+  sourceLabel: string;
+  sourceUrl: string;
+  rules: string;
 };
 
 export type Profile = {
   userId: string;
   displayName: string;
   handle: string;
-  credits: number;
-  overallRating: number;
-  totalForecasts: number;
-  resolvedForecasts: number;
-  correctForecasts: number;
-  averageBrier: number | null;
+  reputation: number;
+  availableReputation: number;
+  reputationAtRisk: number;
+  totalClaims: number;
+  resolvedClaims: number;
+  correctClaims: number;
   rank: number | null;
 };
 
@@ -34,125 +45,124 @@ export type Leader = {
   userId: string;
   displayName: string;
   handle: string;
-  rating: number;
+  reputation: number;
+  atRisk: number;
   category: string;
   accuracy: number;
   resolved: number;
   delta: number;
 };
 
-export type UserForecast = {
-  marketId: string;
-  outcome: Outcome;
-  confidence: number;
-  stake: number;
-  status: string;
-};
-
 export type AppState = {
   profile: Profile;
-  markets: Market[];
+  claims: Claim[];
   leaderboard: Leader[];
-  userForecasts: UserForecast[];
   ledgerMode: "preview" | "indexed" | "contract";
 };
 
-export const SEED_MARKETS: Market[] = [
+export const SEED_CLAIMS: Claim[] = [
   {
-    id: "united-next-league-win",
-    eyebrow: "Football · Match market",
-    question: "Will Manchester United win their next league match?",
-    category: "Football",
-    status: "OPEN",
-    lockAt: "2026-08-15T18:30:00.000Z",
-    resolutionAt: "2026-08-16T23:00:00.000Z",
-    sourceLabel: "Premier League + BBC Sport",
-    rules:
-      "Regulation time only. A draw or loss resolves NO. An abandoned match not completed within seven days resolves VOID.",
-    yesProbability: 61,
-    volume: 18_420,
-    forecasters: 1_284,
-    signal: "+4.2% today",
-  },
-  {
-    id: "eth-4500-august",
-    eyebrow: "Crypto · Price threshold",
-    question: "Will ETH close above $4,500 on August 31?",
-    category: "Crypto",
-    status: "OPEN",
-    lockAt: "2026-08-31T20:00:00.000Z",
-    resolutionAt: "2026-09-01T00:30:00.000Z",
-    sourceLabel: "Coinbase ETH-USD daily close",
-    rules:
-      "Use the Coinbase ETH-USD candle closing at 00:00 UTC on September 1. Exactly $4,500 resolves NO.",
-    yesProbability: 43,
-    volume: 12_760,
-    forecasters: 904,
-    signal: "-1.8% today",
-  },
-  {
-    id: "starship-before-october",
-    eyebrow: "Technology · Milestone",
-    question: "Will Starship launch before October 1, 2026?",
-    category: "Technology",
-    status: "OPEN",
-    lockAt: "2026-09-29T23:00:00.000Z",
-    resolutionAt: "2026-10-01T23:59:59.000Z",
-    sourceLabel: "SpaceX + FAA",
-    rules:
-      "Launch means the integrated vehicle leaves the launch mount under its own propulsion. Static fires and scrubbed attempts do not count.",
-    yesProbability: 72,
-    volume: 31_905,
-    forecasters: 2_118,
-    signal: "+7.1% this week",
-  },
-  {
-    id: "new-flagship-model-q3",
-    eyebrow: "AI · Product launch",
-    question: "Will a new flagship AI model be publicly released before Q3 ends?",
-    category: "Technology",
-    status: "OPEN",
-    lockAt: "2026-09-28T17:00:00.000Z",
-    resolutionAt: "2026-10-01T12:00:00.000Z",
-    sourceLabel: "Official release pages",
-    rules:
-      "A model must be generally available through a public product or API. Private previews, rumors, and benchmark leaks do not count.",
-    yesProbability: 54,
-    volume: 9_840,
-    forecasters: 711,
-    signal: "High disagreement",
-  },
-  {
-    id: "arsenal-two-goals",
-    eyebrow: "Football · Goals market",
-    question: "Will Arsenal score at least two goals in their next match?",
-    category: "Football",
-    status: "OPEN",
-    lockAt: "2026-08-16T14:00:00.000Z",
-    resolutionAt: "2026-08-17T23:00:00.000Z",
-    sourceLabel: "Club + competition report",
-    rules:
-      "Count goals in regulation time only. Extra time and penalty shootout goals are excluded. Postponement beyond seven days resolves VOID.",
-    yesProbability: 67,
-    volume: 7_230,
-    forecasters: 536,
-    signal: "+2.3% today",
-  },
-  {
-    id: "fed-rate-cut-september",
-    eyebrow: "Economy · Policy decision",
-    question: "Will the Federal Reserve cut its target range at the September meeting?",
+    id: "lena-fed-september-cut",
+    ownerId: "seed-lena",
+    ownerName: "Lena Ortiz",
+    ownerHandle: "@macrobrief",
+    statement:
+      "The Federal Reserve will cut its target range at the September meeting.",
     category: "Economy",
     status: "OPEN",
-    lockAt: "2026-09-15T12:00:00.000Z",
+    stake: 1,
     resolutionAt: "2026-09-17T21:00:00.000Z",
     sourceLabel: "Federal Reserve statement",
+    sourceUrl: "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
     rules:
-      "YES requires the upper or lower bound of the announced federal funds target range to be below its level immediately before the meeting.",
-    yesProbability: 38,
-    volume: 22_110,
-    forecasters: 1_620,
-    signal: "-5.4% this week",
+      "TRUE requires either bound of the announced federal funds target range to be lower than immediately before the September meeting.",
+    createdAt: "2026-08-13T09:15:00.000Z",
+    outcome: null,
+  },
+  {
+    id: "kwame-united-opener",
+    ownerId: "seed-kwame",
+    ownerName: "Kwame A.",
+    ownerHandle: "@pitchoracle",
+    statement: "Manchester United will win their opening league match.",
+    category: "Football",
+    status: "OPEN",
+    stake: 4,
+    resolutionAt: "2026-08-16T23:00:00.000Z",
+    sourceLabel: "Premier League match report",
+    sourceUrl: "https://www.premierleague.com/",
+    rules:
+      "Regulation time only. A draw or loss resolves FALSE. A match not completed within seven days resolves VOID.",
+    createdAt: "2026-08-13T08:42:00.000Z",
+    outcome: null,
+  },
+  {
+    id: "maya-starship-october",
+    ownerId: "seed-maya",
+    ownerName: "Maya Chen",
+    ownerHandle: "@mayamaps",
+    statement: "Starship will launch before October 1, 2026.",
+    category: "Technology",
+    status: "OPEN",
+    stake: 3,
+    resolutionAt: "2026-10-01T23:59:59.000Z",
+    sourceLabel: "SpaceX and FAA",
+    sourceUrl: "https://www.spacex.com/launches/",
+    rules:
+      "The integrated vehicle must leave the launch mount under its own propulsion. Static fires and scrubbed attempts do not count.",
+    createdAt: "2026-08-12T19:20:00.000Z",
+    outcome: null,
+  },
+  {
+    id: "omi-eth-august-close",
+    ownerId: "seed-omi",
+    ownerName: "Omi Rao",
+    ownerHandle: "@chainweather",
+    statement: "ETH will close above $4,500 on August 31, 2026.",
+    category: "Crypto",
+    status: "OPEN",
+    stake: 5,
+    resolutionAt: "2026-09-01T00:30:00.000Z",
+    sourceLabel: "Coinbase ETH-USD close",
+    sourceUrl: "https://www.coinbase.com/price/ethereum",
+    rules:
+      "Use the Coinbase ETH-USD daily candle closing at 00:00 UTC on September 1. Exactly $4,500 resolves FALSE.",
+    createdAt: "2026-08-12T16:05:00.000Z",
+    outcome: null,
+  },
+  {
+    id: "maya-flagship-model-q3",
+    ownerId: "seed-maya",
+    ownerName: "Maya Chen",
+    ownerHandle: "@mayamaps",
+    statement: "A new flagship AI model will be publicly released before Q3 ends.",
+    category: "Technology",
+    status: "OPEN",
+    stake: 2,
+    resolutionAt: "2026-10-01T12:00:00.000Z",
+    sourceLabel: "Official model release pages",
+    sourceUrl: "https://openai.com/news/",
+    rules:
+      "The model must be generally available through a public product or API. Private previews and rumors do not count.",
+    createdAt: "2026-08-11T14:40:00.000Z",
+    outcome: null,
+  },
+  {
+    id: "kwame-arsenal-two-goals",
+    ownerId: "seed-kwame",
+    ownerName: "Kwame A.",
+    ownerHandle: "@pitchoracle",
+    statement: "Arsenal will score at least two goals in their next match.",
+    category: "Football",
+    status: "OPEN",
+    stake: 3,
+    resolutionAt: "2026-08-17T23:00:00.000Z",
+    sourceLabel: "Official competition report",
+    sourceUrl: "https://www.arsenal.com/fixtures",
+    rules:
+      "Count regulation-time goals only. Extra time and shootout goals are excluded. A postponement beyond seven days resolves VOID.",
+    createdAt: "2026-08-10T11:25:00.000Z",
+    outcome: null,
   },
 ];
 
@@ -161,41 +171,45 @@ export const SEED_LEADERS: Leader[] = [
     userId: "seed-maya",
     displayName: "Maya Chen",
     handle: "@mayamaps",
-    rating: 842,
+    reputation: 134,
+    atRisk: 5,
     category: "Technology",
     accuracy: 74,
-    resolved: 146,
-    delta: 18,
+    resolved: 46,
+    delta: 34,
   },
   {
     userId: "seed-kwame",
     displayName: "Kwame A.",
     handle: "@pitchoracle",
-    rating: 819,
+    reputation: 127,
+    atRisk: 7,
     category: "Football",
     accuracy: 71,
-    resolved: 203,
-    delta: 11,
+    resolved: 63,
+    delta: 27,
   },
   {
     userId: "seed-lena",
     displayName: "Lena Ortiz",
     handle: "@macrobrief",
-    rating: 804,
+    reputation: 119,
+    atRisk: 1,
     category: "Economy",
     accuracy: 69,
-    resolved: 188,
-    delta: 7,
+    resolved: 38,
+    delta: 19,
   },
   {
     userId: "seed-omi",
     displayName: "Omi Rao",
     handle: "@chainweather",
-    rating: 786,
+    reputation: 112,
+    atRisk: 5,
     category: "Crypto",
     accuracy: 67,
-    resolved: 121,
-    delta: -3,
+    resolved: 31,
+    delta: 12,
   },
 ];
 
@@ -209,17 +223,16 @@ export function createPreviewState(
       userId: user?.userId || "local-preview",
       displayName: fallbackName,
       handle: `@${handleBase.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 24)}`,
-      credits: 100,
-      overallRating: 500,
-      totalForecasts: 0,
-      resolvedForecasts: 0,
-      correctForecasts: 0,
-      averageBrier: null,
+      reputation: 100,
+      availableReputation: 100,
+      reputationAtRisk: 0,
+      totalClaims: 0,
+      resolvedClaims: 0,
+      correctClaims: 0,
       rank: null,
     },
-    markets: SEED_MARKETS,
+    claims: SEED_CLAIMS,
     leaderboard: SEED_LEADERS,
-    userForecasts: [],
     ledgerMode: "preview",
   };
 }

@@ -1,54 +1,63 @@
 # Credence architecture
 
-Credence is a social forecasting product. People begin with non-transferable
-Conviction Credits, risk those credits on resolvable forecasts, and build a
-category-specific reputation from their probability calibration.
+Credence is a unilateral reputation-commitment system. Every account starts
+with 100 non-transferable reputation points. A claim has exactly one owner and
+one stake. There are no counterparties, opposing positions, odds, shares,
+liquidity, or pooled payouts.
 
-## Trust boundary
+## Settlement invariant
 
-### Frontend and application API
+When a person with 100 REP backs a claim with 1 REP:
 
-- Render markets, profiles, leaderboards, and transaction progress.
-- Use D1 as a searchable read model and private-preview ledger.
-- Attribute preview writes to the authenticated Sites user.
-- Never choose the outcome of a market.
+| Resolution | Amount returned | Final reputation |
+| --- | ---: | ---: |
+| TRUE | 2 REP | 101 REP |
+| FALSE | 0 REP | 99 REP |
+| VOID | 1 REP | 100 REP |
 
-### GenLayer Intelligent Contract
+The stake is deducted from available reputation and shown as at risk while the
+claim is open. A TRUE resolution returns the original stake plus an equal bonus.
+A FALSE resolution permanently burns the stake. A VOID resolution only refunds
+the original stake.
 
-- Issue the one-time starting credit allocation.
-- Lock forecasts and their confidence before the deadline.
-- Fetch the immutable evidence sources selected when a market is created.
-- Ask independent validators to resolve `YES`, `NO`, or `VOID`.
-- Settle the points pool and update deterministic reputation statistics.
-- Expose the accepted/finalized state that an indexer can mirror into D1.
+## Frontend and D1 own
 
-### External sources
+- ChatGPT sign-in, profiles, discovery, search, and leaderboards.
+- A private preview ledger for claims made before wallet signing is enabled.
+- Indexing public claim receipts and presenting available versus at-risk REP.
+- Non-authoritative interface states and transaction progress.
 
-- Publish the raw facts used for resolution.
-- Are treated as untrusted evidence, not as instructions.
-- Must be immutable in the market definition once forecasting begins.
+The D1 preview never decides whether a claim is true.
 
-## Resolution flow
+## GenLayer owns
+
+- Registration and the 100 REP starting balance.
+- One-owner claim creation, immutable statement, rules, sources, deadline, and stake.
+- Locking a person's own REP without creating a pool.
+- Validator consensus over approved public evidence.
+- TRUE/FALSE/VOID settlement and permanent reputation accounting.
+- Auditable user, category, and protocol records.
+
+## External sources own
+
+External sources provide raw facts only. A claimant freezes one to three HTTPS
+sources and an explicit resolution rule before staking. Validators independently
+re-fetch the evidence and must agree on the substantive outcome.
+
+## Flow
 
 ```text
-user forecast
-  -> contract locks credits and probability
-  -> deadline passes
-  -> worker calls resolve_market
-  -> validators independently fetch the approved sources
-  -> validators agree on YES / NO / VOID
-  -> contract settles balances and Brier-based reputation
-  -> transaction enters the appeal window
-  -> finalized result is indexed into D1
-  -> UI updates the profile and leaderboard
+person writes a future claim
+  -> chooses evidence, rule, deadline, and personal REP stake
+  -> contract deducts stake from available REP and marks it at risk
+  -> after the deadline, any caller requests resolution
+  -> validators independently inspect the frozen evidence
+  -> TRUE: credit 2x stake | FALSE: burn stake | VOID: refund stake
+  -> site indexes the immutable personal record
 ```
 
-## MVP deployment modes
+## Deployment modes
 
-- **Private preview:** Sites authentication plus D1 make the product fully
-  interactive while the GenLayer deployment is being funded and configured.
-- **Testnet:** the browser submits wallet-signed writes to the deployed
-  Intelligent Contract; D1 becomes a non-authoritative index and social layer.
-
-The UI labels preview writes so they cannot be confused with finalized on-chain
-forecasts.
+- `preview`: illustrative browser state for signed-out visitors.
+- `indexed`: authenticated D1 claim ledger; no on-chain settlement claim is made.
+- `contract`: Bradbury transactions and indexed contract receipts after deployment.

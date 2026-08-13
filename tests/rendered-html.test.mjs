@@ -22,9 +22,11 @@ test("server-renders the Credence product", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
   assert.match(html, /<title>Credence/);
-  assert.match(html, /Build a track record/);
-  assert.match(html, /Where.{0,10}s your edge/);
+  assert.match(html, /Put your reputation on it/);
+  assert.match(html, /People backing their word/);
   assert.match(html, /Manchester United/);
-  assert.match(html, /Start forecasting/);
+  assert.match(html, /Make your claim/);
+  assert.match(html, /COUNTERPARTIES/);
+  assert.match(html, /not a pool/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/);
 });

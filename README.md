@@ -1,39 +1,31 @@
 # Credence
 
-Credence is a social forecasting MVP built around non-transferable Conviction
-Credits and category-specific reputation. Users state a binary forecast with a
-probability, risk up to 20% of their available credits, and build an auditable
-track record after GenLayer validators resolve the outcome.
+Credence lets one person put their own reputation behind a public future claim.
+Every account starts with 100 non-transferable REP. There is no betting pool,
+counterparty, liquidity, odds, or token purchase.
 
-## Included
+- TRUE returns twice the stake, for a net gain equal to the stake.
+- FALSE returns nothing and permanently burns the stake.
+- VOID refunds the original stake.
 
-- Responsive forecasting website with market search and topic filters
-- Interactive forecast composer with confidence and stake controls
-- Private Sites/D1 preview ledger and leaderboard read model
-- Production-oriented GenLayer Intelligent Contract
-- One-time starting-credit allocation and deterministic settlement
-- Brier-based overall and category reputation
-- YES / NO / VOID resolution with independent validator re-checks
-- Direct-mode contract tests
+The web app provides ChatGPT sign-in, persistent D1 claim records, public claim
+discovery, personal records, and a reputation leaderboard. The GenLayer
+contract owns the authoritative claim, evidence, resolution, and settlement
+state.
 
-See `ARCHITECTURE.md` for the trust boundary between the website, D1 index, and
-GenLayer contract.
+## Local website
 
-## Local development
-
-```powershell
-$env:CODEX_LOCAL_PREVIEW = "1"
+```bash
+npm install
 npm run dev
 ```
 
-Run a production build with `npm run build`. The full Cloudflare-backed local
-runtime requires the Microsoft Visual C++ Redistributable on Windows.
+## Validation
 
-## Contract verification
-
-```powershell
-genvm-lint check contracts/credence_market.py
-pytest tests/direct -v
+```bash
+npm test
+genvm-lint check contracts/credence_claims.py
+pytest tests/direct -q
 ```
 
-The contract pins a concrete GenVM runner hash as required for deployment.
+See `ARCHITECTURE.md` for the contract boundary and exact settlement invariant.

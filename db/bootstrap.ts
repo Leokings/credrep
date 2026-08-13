@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { getDb } from ".";
-import { SEED_LEADERS, SEED_MARKETS } from "../lib/product-data";
-import { markets, profiles } from "./schema";
+import { SEED_CLAIMS, SEED_LEADERS } from "../lib/product-data";
+import { claims, profiles } from "./schema";
 
 type Database = ReturnType<typeof getDb>;
 
@@ -10,40 +10,54 @@ function seededHandle(handle: string) {
 }
 
 export async function ensureSeedData(db: Database) {
-  for (const market of SEED_MARKETS) {
-    await db
-      .insert(markets)
-      .values({
-        id: market.id,
-        eyebrow: market.eyebrow,
-        question: market.question,
-        category: market.category,
-        status: market.status,
-        lockAt: market.lockAt,
-        resolutionAt: market.resolutionAt,
-        sourceLabel: market.sourceLabel,
-        rules: market.rules,
-        yesProbabilityBps: market.yesProbability * 100,
-        volume: market.volume,
-        forecasters: market.forecasters,
-        signal: market.signal,
-      })
-      .onConflictDoNothing();
-  }
-
   for (const leader of SEED_LEADERS) {
+    const openClaims = SEED_CLAIMS.filter(
+      (claim) => claim.ownerId === leader.userId,
+    ).length;
     await db
       .insert(profiles)
       .values({
         userId: leader.userId,
         displayName: leader.displayName,
         handle: seededHandle(leader.handle),
-        credits: 100 + Math.max(0, leader.delta),
-        overallRating: leader.rating,
-        totalForecasts: leader.resolved,
-        resolvedForecasts: leader.resolved,
-        correctForecasts: Math.round((leader.resolved * leader.accuracy) / 100),
-        brierTotal: Math.round(leader.resolved * 1_640),
+        credits: leader.reputation - leader.atRisk,
+        atRisk: leader.atRisk,
+        overallRating: leader.reputation,
+        totalClaims: leader.resolved + openClaims,
+        resolvedClaims: leader.resolved,
+        correctClaims: Math.round((leader.resolved * leader.accuracy) / 100),
+      })
+      .onConflictDoUpdate({
+        target: profiles.userId,
+        set: {
+          displayName: leader.displayName,
+          handle: seededHandle(leader.handle),
+          credits: leader.reputation - leader.atRisk,
+          atRisk: leader.atRisk,
+          overallRating: leader.reputation,
+          totalClaims: leader.resolved + openClaims,
+          resolvedClaims: leader.resolved,
+          correctClaims: Math.round((leader.resolved * leader.accuracy) / 100),
+        },
+      });
+  }
+
+  for (const claim of SEED_CLAIMS) {
+    await db
+      .insert(claims)
+      .values({
+        id: claim.id,
+        userId: claim.ownerId,
+        statement: claim.statement,
+        category: claim.category,
+        status: claim.status,
+        stake: claim.stake,
+        resolutionAt: claim.resolutionAt,
+        sourceLabel: claim.sourceLabel,
+        sourceUrl: claim.sourceUrl,
+        rules: claim.rules,
+        outcome: claim.outcome,
+        createdAt: claim.createdAt,
       })
       .onConflictDoNothing();
   }
@@ -58,7 +72,17 @@ export async function ensureProfile(
     .from(profiles)
     .where(eq(profiles.userId, user.userId))
     .limit(1);
-  if (existing[0]) return existing[0];
+  if (existing[0]) {
+    if (existing[0].totalClaims === 0 && existing[0].totalForecasts > 0) {
+      const [migrated] = await db
+        .update(profiles)
+        .set({ credits: 100, atRisk: 0, totalForecasts: 0 })
+        .where(eq(profiles.userId, user.userId))
+        .returning();
+      return migrated;
+    }
+    return existing[0];
+  }
 
   const rawHandle = user.email.split("@")[0].replace(/[^a-zA-Z0-9_]/g, "");
   const handle = `@${(rawHandle || "forecaster").slice(0, 20)}_${user.userId.slice(-4)}`;

@@ -44,3 +44,4 @@ yarn-error.log*
 /.wrangler/
 /outputs/
 /work/
+/.tools/genlayer-cli/node_modules/

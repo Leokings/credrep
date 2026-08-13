@@ -6,9 +6,10 @@ from tests.gltest_windows_compat import install_windows_direct_compatibility
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-CONTRACT_PATH = PROJECT_ROOT / "contracts" / "credence_market.py"
+CONTRACT_PATH = PROJECT_ROOT / "contracts" / "credence_claims.py"
 SDK_VERSION = "v0.2.16"
 START_TIME = "2026-08-13T12:00:00+00:00"
+RESOLUTION_TIME = 1_786_665_600
 
 
 install_windows_direct_compatibility()
@@ -26,14 +27,14 @@ def credence(direct_vm, direct_deploy, direct_owner):
     )
 
 
-def create_market(contract, lock_time=1_786_626_000, market_id="united-opener"):
-    contract.create_market(
-        market_id,
-        "Will Manchester United win their opening league match?",
-        "football",
-        "YES only if Manchester United win in regulation time. Draws and losses resolve NO. Abandoned matches resolve VOID.",
-        '["https://example.com/match-report"]',
-        lock_time,
-        100,
+def make_claim(contract, claim_id="fed-september-cut", stake=1):
+    contract.make_claim(
+        claim_id,
+        "The Federal Reserve will cut its target range at its September meeting.",
+        "economy",
+        "TRUE requires either bound of the announced target range to be lower than immediately before the meeting.",
+        '["https://example.com/fed-statement"]',
+        RESOLUTION_TIME,
+        stake,
     )
-    return market_id
+    return claim_id

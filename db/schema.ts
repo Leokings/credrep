@@ -15,6 +15,10 @@ export const profiles = sqliteTable(
     displayName: text("display_name").notNull(),
     handle: text("handle").notNull(),
     credits: integer("credits").notNull().default(100),
+    atRisk: integer("at_risk").notNull().default(0),
+    totalClaims: integer("total_claims").notNull().default(0),
+    resolvedClaims: integer("resolved_claims").notNull().default(0),
+    correctClaims: integer("correct_claims").notNull().default(0),
     overallRating: integer("overall_rating").notNull().default(500),
     totalForecasts: integer("total_forecasts").notNull().default(0),
     resolvedForecasts: integer("resolved_forecasts").notNull().default(0),
@@ -26,6 +30,35 @@ export const profiles = sqliteTable(
   (table) => [
     uniqueIndex("idx_profiles_handle").on(table.handle),
     index("idx_profiles_rating").on(table.overallRating),
+  ],
+);
+
+export const claims = sqliteTable(
+  "claims",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => profiles.userId),
+    statement: text("statement").notNull(),
+    category: text("category").notNull(),
+    status: text("status").notNull().default("OPEN"),
+    stake: integer("stake").notNull(),
+    resolutionAt: text("resolution_at").notNull(),
+    sourceLabel: text("source_label").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    rules: text("rules").notNull(),
+    outcome: text("outcome"),
+    payout: integer("payout").notNull().default(0),
+    contractClaimId: text("contract_claim_id"),
+    transactionHash: text("transaction_hash"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    resolvedAt: text("resolved_at"),
+  },
+  (table) => [
+    index("idx_claims_status_resolution").on(table.status, table.resolutionAt),
+    index("idx_claims_category_status").on(table.category, table.status),
+    index("idx_claims_user_created").on(table.userId, table.createdAt),
   ],
 );
 
