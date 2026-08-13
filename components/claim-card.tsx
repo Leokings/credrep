@@ -1,6 +1,7 @@
 "use client";
 
 import type { Claim } from "../lib/product-data";
+import { BRADBURY_EXPLORER_URL } from "../lib/deployment";
 import { ClockIcon, ShieldIcon } from "./icons";
 
 type Props = {
@@ -32,7 +33,10 @@ export function ClaimCard({ claim, featured, isOwner }: Props) {
   return (
     <article className={`market-card claim-card ${featured ? "market-card-featured" : ""}`}>
       <div className="market-card-topline">
-        <span className="market-eyebrow">{claim.category} · Personal claim</span>
+        <span className="market-eyebrow">
+          {claim.category} · Personal claim
+          {claim.contractClaimId && <b className="onchain-tag">ON-CHAIN</b>}
+        </span>
         <span className={`market-status claim-status-${claim.status.toLowerCase()}`}>
           <span aria-hidden="true" className="market-status-dot" />
           {claim.status === "OPEN" ? `${claim.stake} REP at risk` : claim.status}
@@ -76,6 +80,11 @@ export function ClaimCard({ claim, featured, isOwner }: Props) {
       <footer className="market-card-footer">
         <span><ClockIcon /> Resolves {formatResolution(claim.resolutionAt)}</span>
         <a href={claim.sourceUrl} rel="noreferrer" target="_blank">Source: {claim.sourceLabel} ↗</a>
+        {claim.contractClaimId && (
+          <a href={BRADBURY_EXPLORER_URL} rel="noreferrer" target="_blank" title={claim.transactionHash || claim.contractClaimId}>
+            Proof ↗
+          </a>
+        )}
       </footer>
     </article>
   );

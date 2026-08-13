@@ -13,6 +13,17 @@ discovery, personal records, and a reputation leaderboard. The GenLayer
 contract owns the authoritative claim, evidence, resolution, and settlement
 state.
 
+## Bradbury deployment
+
+- Network: GenLayer Bradbury Testnet (chain ID 4221)
+- Contract: `0x164868c406fe6cFB4a70F93bAE9e3246b5873D34`
+- Deployment transaction: `0xac6a2c68c5a6e07d70d5683e30476e751558af6fd3ecf5bf95b4d95d48f27714`
+
+The website reads the deployed contract publicly. A signed-in person connects
+their own MetaMask wallet, activates its one-time 100 REP balance, and signs
+their own `make_claim` transaction. The dedicated deployment key is never sent
+to the website or committed to this repository.
+
 ## Local website
 
 ```bash

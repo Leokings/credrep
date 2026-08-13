@@ -3,6 +3,9 @@ export type ClaimOutcome = "TRUE" | "FALSE" | "VOID";
 
 export type Claim = {
   id: string;
+  contractClaimId?: string;
+  transactionHash?: string;
+  ownerAddress?: string;
   ownerId: string;
   ownerName: string;
   ownerHandle: string;

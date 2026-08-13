@@ -24,6 +24,8 @@ the original stake.
 
 - ChatGPT sign-in, profiles, discovery, search, and leaderboards.
 - A private preview ledger for claims made before wallet signing is enabled.
+- MetaMask connection, Bradbury network setup, transaction progress, and public
+  reads from the deployed contract.
 - Indexing public claim receipts and presenting available versus at-risk REP.
 - Non-authoritative interface states and transaction progress.
 
@@ -60,4 +62,13 @@ person writes a future claim
 
 - `preview`: illustrative browser state for signed-out visitors.
 - `indexed`: authenticated D1 claim ledger; no on-chain settlement claim is made.
-- `contract`: Bradbury transactions and indexed contract receipts after deployment.
+- `contract`: the connected wallet signs Bradbury registration and claim
+  transactions; the UI changes only after an accepted, successful execution.
+
+## Current Bradbury contract
+
+The production testnet address is
+`0x164868c406fe6cFB4a70F93bAE9e3246b5873D34`. The deployer is a dedicated
+Credence wallet, separate from any workspace wallet. Each product user still
+owns their own contract profile and signs their own claim; the deployer does not
+custody or spend users' reputation.

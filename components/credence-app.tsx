@@ -2,6 +2,22 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { AppState, Claim, ClaimInput } from "../lib/product-data";
+import {
+  connectCredenceWallet,
+  readChainClaims,
+  readChainProfile,
+  readProtocolStats,
+  type ChainClaim,
+  type ChainProfile,
+  type ChainProtocolStats,
+  type ConnectedCredenceWallet,
+} from "../lib/genlayer-client";
+import {
+  BRADBURY_EXPLORER_URL,
+  BRADBURY_FAUCET_URL,
+  CREDENCE_CONTRACT_ADDRESS,
+  shortAddress,
+} from "../lib/deployment";
 import { ClaimCard } from "./claim-card";
 import { ClaimModal } from "./claim-modal";
 import {
@@ -37,6 +53,48 @@ function accuracy(correct: number, resolved: number) {
   return resolved ? Math.round((correct / resolved) * 100) : null;
 }
 
+function titleCase(value: string) {
+  return value.replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function sourceLabel(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "Frozen source";
+  }
+}
+
+function productClaim(
+  claim: ChainClaim,
+  walletAddress?: string,
+  displayName?: string,
+  handle?: string,
+): Claim {
+  const isOwner =
+    Boolean(walletAddress) &&
+    claim.owner.toLowerCase() === walletAddress?.toLowerCase();
+  const firstSource = claim.sources[0] || BRADBURY_EXPLORER_URL;
+  return {
+    id: `chain-${claim.id}`,
+    contractClaimId: claim.id,
+    ownerAddress: claim.owner,
+    ownerId: claim.owner.toLowerCase(),
+    ownerName: isOwner && displayName ? displayName : shortAddress(claim.owner),
+    ownerHandle: isOwner && handle ? handle : `@${claim.owner.slice(2, 10)}`,
+    statement: claim.statement,
+    category: titleCase(claim.category),
+    status: claim.status,
+    stake: claim.stake,
+    resolutionAt: new Date(claim.resolveTimeUnix * 1_000).toISOString(),
+    sourceLabel: sourceLabel(firstSource),
+    sourceUrl: firstSource,
+    rules: claim.resolutionRules,
+    createdAt: claim.createdAt,
+    outcome: claim.outcome,
+  };
+}
+
 export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
   const [state, setState] = useState(initialState);
   const [activeCategory, setActiveCategory] = useState("All claims");
@@ -45,6 +103,12 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [wallet, setWallet] = useState<ConnectedCredenceWallet | null>(null);
+  const [walletBusy, setWalletBusy] = useState(false);
+  const [chainProfile, setChainProfile] = useState<ChainProfile | null>(null);
+  const [chainClaims, setChainClaims] = useState<Claim[]>([]);
+  const [chainStats, setChainStats] = useState<ChainProtocolStats | null>(null);
+  const [chainAvailable, setChainAvailable] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!signedIn) return;
@@ -63,9 +127,55 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
     };
   }, [signedIn]);
 
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([readProtocolStats(), readChainClaims()])
+      .then(([stats, claims]) => {
+        if (cancelled) return;
+        setChainStats(stats);
+        setChainClaims(claims.map((claim) => productClaim(claim)));
+        setChainAvailable(true);
+      })
+      .catch(() => {
+        if (!cancelled) setChainAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const profile = useMemo(
+    () =>
+      chainProfile?.registered
+        ? {
+            ...state.profile,
+            reputation: chainProfile.reputation,
+            availableReputation: chainProfile.availableReputation,
+            reputationAtRisk: chainProfile.reputationAtRisk,
+            totalClaims: chainProfile.claimsMade,
+            resolvedClaims: chainProfile.resolvedClaims,
+            correctClaims: chainProfile.correctClaims,
+          }
+        : state.profile,
+    [chainProfile, state.profile],
+  );
+  const ledgerMode = chainProfile?.registered ? "contract" : state.ledgerMode;
+  const claims = useMemo(() => {
+    const onChainIds = new Set(
+      chainClaims.map((claim) => claim.contractClaimId).filter(Boolean),
+    );
+    return [
+      ...chainClaims,
+      ...state.claims.filter(
+        (claim) =>
+          !claim.contractClaimId || !onChainIds.has(claim.contractClaimId),
+      ),
+    ];
+  }, [chainClaims, state.claims]);
+
   const filteredClaims = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    return state.claims.filter((claim) => {
+    return claims.filter((claim) => {
       const categoryMatch = activeCategory === "All claims" || claim.category === activeCategory;
       const queryMatch =
         !normalizedQuery ||
@@ -75,14 +185,20 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
         claim.sourceLabel.toLowerCase().includes(normalizedQuery);
       return categoryMatch && queryMatch;
     });
-  }, [activeCategory, query, state.claims]);
+  }, [activeCategory, claims, query]);
 
   const visibleClaims = showAll ? filteredClaims : filteredClaims.slice(0, 4);
   const userClaims = useMemo(
-    () => state.claims.filter((claim) => claim.ownerId === state.profile.userId),
-    [state.claims, state.profile.userId],
+    () =>
+      claims.filter(
+        (claim) =>
+          claim.ownerId === profile.userId ||
+          (wallet &&
+            claim.ownerAddress?.toLowerCase() === wallet.address.toLowerCase()),
+      ),
+    [claims, profile.userId, wallet],
   );
-  const userAccuracy = accuracy(state.profile.correctClaims, state.profile.resolvedClaims);
+  const userAccuracy = accuracy(profile.correctClaims, profile.resolvedClaims);
   const topicStats = useMemo(
     () => ["Economy", "Football", "Technology"].map((topic) => {
       const matching = userClaims.filter((claim) => claim.category === topic);
@@ -102,7 +218,59 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
       window.location.assign(signInPath);
       return;
     }
+    if (!wallet) {
+      setNotice("Connect a wallet to make an on-chain personal claim on Bradbury.");
+      return;
+    }
+    if (!chainProfile?.registered) {
+      setNotice("Activate this wallet to receive its one-time starting balance of 100 REP.");
+      return;
+    }
     setComposerOpen(true);
+  }
+
+  async function handleWalletAction() {
+    if (walletBusy || !signedIn) return;
+    setWalletBusy(true);
+    setNotice(null);
+    try {
+      if (!wallet) {
+        const connected = await connectCredenceWallet();
+        const nextProfile = await readChainProfile(connected.address);
+        const rawClaims = await readChainClaims();
+        setWallet(connected);
+        setChainProfile(nextProfile);
+        setChainClaims(
+          rawClaims.map((claim) =>
+            productClaim(
+              claim,
+              connected.address,
+              state.profile.displayName,
+              state.profile.handle,
+            ),
+          ),
+        );
+        setChainAvailable(true);
+        setNotice(
+          nextProfile.registered
+            ? `Wallet ${shortAddress(connected.address)} connected. Your on-chain reputation is ready.`
+            : "Wallet connected. Activate it once to receive 100 non-transferable REP.",
+        );
+      } else if (!chainProfile?.registered) {
+        await wallet.register();
+        const nextProfile = await readChainProfile(wallet.address);
+        const nextStats = await readProtocolStats();
+        setChainProfile(nextProfile);
+        setChainStats(nextStats);
+        setNotice("Your wallet is active with 100 REP. You can now back your first claim.");
+      } else {
+        setNotice(`Wallet ${shortAddress(wallet.address)} is connected to Bradbury.`);
+      }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "The wallet action did not complete.");
+    } finally {
+      setWalletBusy(false);
+    }
   }
 
   async function submitClaim(input: ClaimInput) {
@@ -110,9 +278,9 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
     setNotice(null);
     let claim: Claim = {
       id: `preview-${Date.now()}`,
-      ownerId: state.profile.userId,
-      ownerName: state.profile.displayName,
-      ownerHandle: state.profile.handle,
+      ownerId: profile.userId,
+      ownerName: profile.displayName,
+      ownerHandle: profile.handle,
       statement: input.statement,
       category: input.category,
       status: "OPEN",
@@ -126,7 +294,27 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
     };
 
     try {
-      if (state.ledgerMode === "indexed") {
+      if (ledgerMode === "contract") {
+        if (!wallet || !chainProfile?.registered) {
+          throw new Error("Connect and activate a Bradbury wallet before making a claim.");
+        }
+        const result = await wallet.makeClaim(input);
+        claim = {
+          ...claim,
+          id: `chain-${result.claimId}`,
+          contractClaimId: result.claimId,
+          transactionHash: result.transactionHash,
+          ownerAddress: wallet.address,
+          ownerId: wallet.address.toLowerCase(),
+        };
+        const [nextProfile, nextStats] = await Promise.all([
+          readChainProfile(wallet.address),
+          readProtocolStats(),
+        ]);
+        setChainProfile(nextProfile);
+        setChainStats(nextStats);
+        setChainClaims((current) => [claim, ...current]);
+      } else if (state.ledgerMode === "indexed") {
         const response = await fetch("/api/claims", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -139,20 +327,22 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
         claim = result.claim;
       }
 
-      setState((current) => ({
-        ...current,
-        profile: {
-          ...current.profile,
-          availableReputation: current.profile.availableReputation - input.stake,
-          reputationAtRisk: current.profile.reputationAtRisk + input.stake,
-          totalClaims: current.profile.totalClaims + 1,
-        },
-        claims: [claim, ...current.claims],
-      }));
+      if (ledgerMode !== "contract") {
+        setState((current) => ({
+          ...current,
+          profile: {
+            ...current.profile,
+            availableReputation: current.profile.availableReputation - input.stake,
+            reputationAtRisk: current.profile.reputationAtRisk + input.stake,
+            totalClaims: current.profile.totalClaims + 1,
+          },
+          claims: [claim, ...current.claims],
+        }));
+      }
       setComposerOpen(false);
       setNotice(
-        state.ledgerMode === "contract"
-          ? "Your personal claim was submitted to GenLayer. No one else is on the other side."
+        ledgerMode === "contract"
+          ? "Your claim reached GenLayer consensus. Your REP is now locked behind your word."
           : `${input.stake} REP is now locked behind your claim. TRUE returns ${input.stake * 2}; FALSE returns zero.`,
       );
     } catch (error) {
@@ -183,11 +373,28 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
             <input aria-label="Search claims" onChange={(event) => setQuery(event.target.value)} placeholder="Search claims" value={query} />
           </label>
           {signedIn ? (
-            <div className="user-chip">
-              <span className="avatar avatar-self">{initials(state.profile.displayName)}</span>
-              <span className="user-chip-copy"><strong>{state.profile.reputation} REP</strong><small>{state.profile.reputationAtRisk} at risk</small></span>
-              <ChevronIcon />
-            </div>
+            <>
+              <button
+                className={`wallet-button ${chainProfile?.registered ? "wallet-button-ready" : ""}`}
+                disabled={walletBusy}
+                onClick={handleWalletAction}
+                type="button"
+              >
+                <ShieldIcon />
+                {walletBusy
+                  ? "Waiting for wallet…"
+                  : !wallet
+                    ? "Connect wallet"
+                    : !chainProfile?.registered
+                      ? "Activate 100 REP"
+                      : shortAddress(wallet.address)}
+              </button>
+              <div className="user-chip">
+                <span className="avatar avatar-self">{initials(profile.displayName)}</span>
+                <span className="user-chip-copy"><strong>{profile.reputation} REP</strong><small>{profile.reputationAtRisk} at risk</small></span>
+                <ChevronIcon />
+              </div>
+            </>
           ) : (
             <a className="sign-in-button" href={signInPath}>Start with 100 REP</a>
           )}
@@ -207,13 +414,26 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
               <button className="primary-cta" onClick={openComposer} type="button">Make your claim <span>↘</span></button>
               <a className="text-cta" href="#how-it-works">See the exact math</a>
             </div>
+            <div className="chain-status" aria-label="Bradbury contract status">
+              <span className={`chain-status-dot ${chainAvailable === false ? "chain-status-dot-error" : ""}`} />
+              <span>
+                <strong>{chainAvailable === false ? "Bradbury read unavailable" : "Bradbury contract live"}</strong>
+                <a href={BRADBURY_EXPLORER_URL} rel="noreferrer" target="_blank" title={CREDENCE_CONTRACT_ADDRESS}>
+                  {shortAddress(CREDENCE_CONTRACT_ADDRESS)} ↗
+                </a>
+              </span>
+              <small>
+                {chainStats ? `${chainStats.users} user${chainStats.users === 1 ? "" : "s"} · ${chainStats.claims} on-chain claims` : "Checking contract…"}
+              </small>
+              <a href={BRADBURY_FAUCET_URL} rel="noreferrer" target="_blank">Bradbury faucet ↗</a>
+            </div>
           </div>
 
           <div className="hero-signal-card" aria-label="Your reputation balance">
             <div className="signal-card-header"><span>YOUR REPUTATION</span><span className="pulse-dot" /></div>
-            <div className="signal-score-row"><span className="signal-score">{state.profile.reputation}</span><span className="signal-unit">REP</span></div>
+            <div className="signal-score-row"><span className="signal-score">{profile.reputation}</span><span className="signal-unit">REP</span></div>
             <div className="signal-chart"><span style={{ height: "26%" }} /><span style={{ height: "42%" }} /><span style={{ height: "35%" }} /><span style={{ height: "60%" }} /><span style={{ height: "54%" }} /><span style={{ height: "76%" }} /><span style={{ height: "89%" }} /></div>
-            <div className="signal-card-footer"><span>{state.profile.availableReputation} available</span><strong>{state.profile.reputationAtRisk} at risk</strong></div>
+            <div className="signal-card-footer"><span>{profile.availableReputation} available</span><strong>{profile.reputationAtRisk} at risk</strong></div>
           </div>
         </section>
 
@@ -244,7 +464,15 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
 
           <div className="market-grid">
             {visibleClaims.map((claim, index) => (
-              <ClaimCard claim={claim} featured={index === 0 && activeCategory === "All claims" && !query} isOwner={claim.ownerId === state.profile.userId} key={claim.id} />
+              <ClaimCard
+                claim={claim}
+                featured={index === 0 && activeCategory === "All claims" && !query}
+                isOwner={
+                  claim.ownerId === profile.userId ||
+                  Boolean(wallet && claim.ownerAddress?.toLowerCase() === wallet.address.toLowerCase())
+                }
+                key={claim.id}
+              />
             ))}
           </div>
           {!visibleClaims.length && <div className="empty-state">No claims match that signal. Try another topic or keyword.</div>}
@@ -263,17 +491,17 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
 
           <div className="profile-card" id="record">
             <div className="profile-card-top">
-              <div className="profile-identity"><span className="avatar avatar-large avatar-self">{initials(state.profile.displayName)}</span><div><h3>{state.profile.displayName}</h3><p>{state.profile.handle} · {state.profile.resolvedClaims < 10 ? "Building a record" : "Proven claimant"}</p></div></div>
-              <span className="verified-badge"><ShieldIcon /> Verified ledger</span>
+              <div className="profile-identity"><span className="avatar avatar-large avatar-self">{initials(profile.displayName)}</span><div><h3>{profile.displayName}</h3><p>{profile.handle} · {profile.resolvedClaims < 10 ? "Building a record" : "Proven claimant"}</p></div></div>
+              <span className="verified-badge"><ShieldIcon /> {ledgerMode === "contract" ? "Bradbury on-chain" : "Preview ledger"}</span>
             </div>
             <div className="profile-score-grid">
-              <div className="profile-score-main"><span>REPUTATION</span><strong>{state.profile.reputation}</strong><small>{state.profile.reputation - 100 >= 0 ? "+" : ""}{state.profile.reputation - 100} from start</small></div>
-              <div><span>AVAILABLE</span><strong>{state.profile.availableReputation}</strong><small>Ready to back claims</small></div>
-              <div><span>AT RISK</span><strong>{state.profile.reputationAtRisk}</strong><small>Locked in open claims</small></div>
-              <div><span>ACCURACY</span><strong>{userAccuracy === null ? "—" : `${userAccuracy}%`}</strong><small>{state.profile.resolvedClaims} resolved</small></div>
+              <div className="profile-score-main"><span>REPUTATION</span><strong>{profile.reputation}</strong><small>{profile.reputation - 100 >= 0 ? "+" : ""}{profile.reputation - 100} from start</small></div>
+              <div><span>AVAILABLE</span><strong>{profile.availableReputation}</strong><small>Ready to back claims</small></div>
+              <div><span>AT RISK</span><strong>{profile.reputationAtRisk}</strong><small>Locked in open claims</small></div>
+              <div><span>ACCURACY</span><strong>{userAccuracy === null ? "—" : `${userAccuracy}%`}</strong><small>{profile.resolvedClaims} resolved</small></div>
             </div>
             <div className="topic-ratings">
-              <div className="topic-ratings-header"><span>YOUR CLAIM RECORD</span><span>{state.profile.totalClaims} total claims</span></div>
+              <div className="topic-ratings-header"><span>YOUR CLAIM RECORD</span><span>{profile.totalClaims} total claims</span></div>
               {topicStats.map(({ topic, claims, atRisk }) => (
                 <div className="topic-row" key={topic}><span>{topic}</span><div><i style={{ width: `${Math.min(100, claims * 20)}%` }} /></div><strong>{atRisk} REP</strong><small>{claims} claims</small></div>
               ))}
@@ -304,9 +532,9 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
         <section className="closing-cta"><div><span className="section-kicker section-kicker-light">WILL YOU STAND BY IT?</span><h2>Put your reputation<br />behind your word.</h2></div><button className="closing-button" onClick={openComposer} type="button">Make your claim <span>↗</span></button></section>
       </main>
 
-      <footer className="site-footer"><a className="brand brand-footer" href="#top"><span className="brand-mark"><MarkIcon /></span><span>CREDENCE</span></a><p>Personal reputation claims, settled by consensus.</p><div><a href="#claims">Claims</a><a href="#reputation">Your record</a><a href="#how-it-works">How it works</a></div><span>Built on GenLayer · Preview ledger</span></footer>
+      <footer className="site-footer"><a className="brand brand-footer" href="#top"><span className="brand-mark"><MarkIcon /></span><span>CREDENCE</span></a><p>Personal reputation claims, settled by consensus.</p><div><a href="#claims">Claims</a><a href="#reputation">Your record</a><a href={BRADBURY_EXPLORER_URL} rel="noreferrer" target="_blank">Bradbury contract ↗</a></div><span>GenLayer Bradbury · {shortAddress(CREDENCE_CONTRACT_ADDRESS)}</span></footer>
 
-      {composerOpen && <ClaimModal availableReputation={state.profile.availableReputation} busy={busy} mode={state.ledgerMode} onClose={() => !busy && setComposerOpen(false)} onSubmit={submitClaim} reputation={state.profile.reputation} />}
+      {composerOpen && <ClaimModal availableReputation={profile.availableReputation} busy={busy} mode={ledgerMode} onClose={() => !busy && setComposerOpen(false)} onSubmit={submitClaim} reputation={profile.reputation} />}
     </div>
   );
 }
