@@ -1,0 +1,4 @@
+[tool.pytest.ini_options]
+testpaths = ["tests/direct"]
+addopts = "-ra --strict-markers"
+norecursedirs = [".venv", "node_modules", "dist", ".wrangler"]
