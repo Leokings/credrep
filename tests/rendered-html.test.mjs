@@ -26,9 +26,10 @@ test("server-renders the Credence product", async () => {
   assert.match(html, /People backing their word/);
   assert.match(html, /Manchester United/);
   assert.match(html, /Make your claim/);
-  assert.match(html, /COUNTERPARTIES/);
+  assert.match(html, /RECOVER TO 100/);
+  assert.match(html, /Verify one X account/);
   assert.match(html, /not a pool/i);
   assert.match(html, /Bradbury contract live/);
-  assert.match(html, /0x1648/);
+  assert.match(html, /0xBFB5/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/);
 });

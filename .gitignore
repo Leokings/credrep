@@ -45,3 +45,4 @@ yarn-error.log*
 /outputs/
 /work/
 /.tools/genlayer-cli/node_modules/
+/.tools/pyenv/

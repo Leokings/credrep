@@ -20,10 +20,49 @@ export type ChainProfile = {
   availableReputation: number;
   reputationAtRisk: number;
   claimsMade: number;
+  openClaims: number;
   resolvedClaims: number;
   correctClaims: number;
   voidClaims: number;
   accuracyBps: number;
+  xIdentityBound: boolean;
+  xIdentityId: string;
+  xHandle: string;
+  xIdentityStatus: IdentityStatus;
+  xVerifiedAt: number;
+  xVerifiedUntil: number;
+  recoveryActive: boolean;
+  recoveryNextAt: number;
+  recoverableReputation: number;
+  recoveredReputation: number;
+};
+
+export type IdentityStatus =
+  | "UNBOUND"
+  | "PENDING"
+  | "VERIFIED"
+  | "GRACE"
+  | "STALE";
+
+export type BindingChallenge = {
+  challenge: string;
+  expiresAt: number;
+  active: boolean;
+  attempt: number;
+};
+
+export type ChainIdentity = {
+  bound: boolean;
+  status: IdentityStatus;
+  handle: string;
+  identityId: string;
+  proofUrl: string;
+  challenge: string;
+  verifiedAt: number;
+  verifiedUntil: number;
+  graceUntil: number;
+  refreshDue: boolean;
+  canClaim: boolean;
 };
 
 export type ChainProtocolStats = {
@@ -33,6 +72,11 @@ export type ChainProtocolStats = {
   maxStakeBps: number;
   totalBonusMinted: number;
   totalReputationBurned: number;
+  totalReputationRecovered: number;
+  recoveryTriggerBelow: number;
+  recoveryTarget: number;
+  xVerificationValiditySeconds: number;
+  xVerificationGraceSeconds: number;
 };
 
 export type ChainClaim = {
@@ -52,7 +96,12 @@ export type ChainClaim = {
 
 export type ConnectedCredenceWallet = {
   address: `0x${string}`;
-  register(): Promise<`0x${string}`>;
+  beginXBinding(): Promise<`0x${string}`>;
+  verifyXBinding(proofUrl: string): Promise<`0x${string}`>;
+  refreshXIdentity(): Promise<`0x${string}`>;
+  replaceXProof(proofUrl: string): Promise<`0x${string}`>;
+  startRecovery(): Promise<`0x${string}`>;
+  claimRecovery(): Promise<`0x${string}`>;
   makeClaim(input: ClaimInput): Promise<{
     claimId: string;
     transactionHash: `0x${string}`;
@@ -125,10 +174,64 @@ export async function readChainProfile(address: string): Promise<ChainProfile> {
     availableReputation: asNumber(raw.available_reputation),
     reputationAtRisk: asNumber(raw.reputation_at_risk),
     claimsMade: asNumber(raw.claims_made),
+    openClaims: asNumber(raw.open_claims),
     resolvedClaims: asNumber(raw.resolved_claims),
     correctClaims: asNumber(raw.correct_claims),
     voidClaims: asNumber(raw.void_claims),
     accuracyBps: asNumber(raw.accuracy_bps),
+    xIdentityBound: Boolean(raw.x_identity_bound),
+    xIdentityId: asString(raw.x_identity_id),
+    xHandle: asString(raw.x_handle),
+    xIdentityStatus: asString(raw.x_identity_status) as IdentityStatus,
+    xVerifiedAt: asNumber(raw.x_verified_at),
+    xVerifiedUntil: asNumber(raw.x_verified_until),
+    recoveryActive: Boolean(raw.recovery_active),
+    recoveryNextAt: asNumber(raw.recovery_next_at),
+    recoverableReputation: asNumber(raw.recoverable_reputation),
+    recoveredReputation: asNumber(raw.recovered_reputation),
+  };
+}
+
+export async function readBindingChallenge(
+  address: string,
+): Promise<BindingChallenge> {
+  const raw = asRecord(
+    await readClient.readContract({
+      address: CREDENCE_CONTRACT_ADDRESS,
+      functionName: "get_binding_challenge",
+      args: [toCalldataAddress(address)],
+    }),
+  );
+  return {
+    challenge: asString(raw.challenge),
+    expiresAt: asNumber(raw.expires_at),
+    active: Boolean(raw.active),
+    attempt: asNumber(raw.attempt),
+  };
+}
+
+export async function readChainIdentity(
+  address: string,
+): Promise<ChainIdentity> {
+  const raw = asRecord(
+    await readClient.readContract({
+      address: CREDENCE_CONTRACT_ADDRESS,
+      functionName: "get_identity_status",
+      args: [toCalldataAddress(address)],
+    }),
+  );
+  return {
+    bound: Boolean(raw.bound),
+    status: asString(raw.status) as IdentityStatus,
+    handle: asString(raw.handle),
+    identityId: asString(raw.identity_id),
+    proofUrl: asString(raw.proof_url),
+    challenge: asString(raw.challenge),
+    verifiedAt: asNumber(raw.verified_at),
+    verifiedUntil: asNumber(raw.verified_until),
+    graceUntil: asNumber(raw.grace_until),
+    refreshDue: Boolean(raw.refresh_due),
+    canClaim: Boolean(raw.can_claim),
   };
 }
 
@@ -146,6 +249,15 @@ export async function readProtocolStats(): Promise<ChainProtocolStats> {
     maxStakeBps: asNumber(raw.max_stake_bps),
     totalBonusMinted: asNumber(raw.total_bonus_minted),
     totalReputationBurned: asNumber(raw.total_reputation_burned),
+    totalReputationRecovered: asNumber(raw.total_reputation_recovered),
+    recoveryTriggerBelow: asNumber(raw.recovery_trigger_below),
+    recoveryTarget: asNumber(raw.recovery_target),
+    xVerificationValiditySeconds: asNumber(
+      raw.x_verification_validity_seconds,
+    ),
+    xVerificationGraceSeconds: asNumber(
+      raw.x_verification_grace_seconds,
+    ),
   };
 }
 
@@ -227,17 +339,39 @@ export async function connectCredenceWallet(): Promise<ConnectedCredenceWallet> 
   });
   await writeClient.connect("testnetBradbury");
 
+  async function write(
+    functionName: string,
+    args: unknown[] = [],
+  ): Promise<`0x${string}`> {
+    const transactionHash = (await writeClient.writeContract({
+      address: CREDENCE_CONTRACT_ADDRESS,
+      functionName,
+      args,
+      value: 0n,
+    })) as `0x${string}`;
+    await waitForAccepted(transactionHash);
+    return transactionHash;
+  }
+
   return {
     address,
-    async register() {
-      const transactionHash = (await writeClient.writeContract({
-        address: CREDENCE_CONTRACT_ADDRESS,
-        functionName: "register_user",
-        args: [],
-        value: 0n,
-      })) as `0x${string}`;
-      await waitForAccepted(transactionHash);
-      return transactionHash;
+    beginXBinding() {
+      return write("begin_x_binding");
+    },
+    verifyXBinding(proofUrl) {
+      return write("verify_x_binding", [proofUrl]);
+    },
+    refreshXIdentity() {
+      return write("refresh_x_identity", [toCalldataAddress(address)]);
+    },
+    replaceXProof(proofUrl) {
+      return write("replace_x_proof", [proofUrl]);
+    },
+    startRecovery() {
+      return write("start_recovery");
+    },
+    claimRecovery() {
+      return write("claim_recovery");
     },
     async makeClaim(input) {
       const claimId = makeClaimId(address);

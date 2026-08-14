@@ -4,10 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import type { AppState, Claim, ClaimInput } from "../lib/product-data";
 import {
   connectCredenceWallet,
+  readBindingChallenge,
   readChainClaims,
+  readChainIdentity,
   readChainProfile,
   readProtocolStats,
+  type BindingChallenge,
   type ChainClaim,
+  type ChainIdentity,
   type ChainProfile,
   type ChainProtocolStats,
   type ConnectedCredenceWallet,
@@ -65,6 +69,15 @@ function sourceLabel(url: string) {
   }
 }
 
+function formatUnixDate(value: number) {
+  if (!value) return "Not scheduled";
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value * 1_000));
+}
+
 function productClaim(
   claim: ChainClaim,
   walletAddress?: string,
@@ -106,9 +119,14 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
   const [wallet, setWallet] = useState<ConnectedCredenceWallet | null>(null);
   const [walletBusy, setWalletBusy] = useState(false);
   const [chainProfile, setChainProfile] = useState<ChainProfile | null>(null);
+  const [chainIdentity, setChainIdentity] = useState<ChainIdentity | null>(null);
+  const [bindingChallenge, setBindingChallenge] = useState<BindingChallenge | null>(null);
   const [chainClaims, setChainClaims] = useState<Claim[]>([]);
   const [chainStats, setChainStats] = useState<ChainProtocolStats | null>(null);
   const [chainAvailable, setChainAvailable] = useState<boolean | null>(null);
+  const [xProofOpen, setXProofOpen] = useState(false);
+  const [xProofMode, setXProofMode] = useState<"bind" | "replace">("bind");
+  const [xProofUrl, setXProofUrl] = useState("");
 
   useEffect(() => {
     if (!signedIn) return;
@@ -213,6 +231,31 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
     [userClaims],
   );
 
+  const activeXHandle = chainProfile?.xHandle
+    ? `@${chainProfile.xHandle}`
+    : profile.handle;
+  const proofChallenge =
+    xProofMode === "replace"
+      ? chainIdentity?.challenge || ""
+      : bindingChallenge?.challenge || "";
+  const xPostIntent = proofChallenge
+    ? `https://x.com/intent/post?text=${encodeURIComponent(proofChallenge)}`
+    : "https://x.com/compose/post";
+
+  async function refreshWalletState(address: string) {
+    const [nextProfile, nextIdentity, nextChallenge, nextStats] = await Promise.all([
+      readChainProfile(address),
+      readChainIdentity(address),
+      readBindingChallenge(address),
+      readProtocolStats(),
+    ]);
+    setChainProfile(nextProfile);
+    setChainIdentity(nextIdentity);
+    setBindingChallenge(nextChallenge);
+    setChainStats(nextStats);
+    return { nextProfile, nextIdentity, nextChallenge };
+  }
+
   function openComposer() {
     if (!signedIn) {
       window.location.assign(signInPath);
@@ -223,9 +266,19 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
       return;
     }
     if (!chainProfile?.registered) {
-      setNotice("Activate this wallet to receive its one-time starting balance of 100 REP.");
+      setNotice("Verify this wallet with one public X post before making a claim.");
       return;
     }
+    if (!chainIdentity?.canClaim) {
+      setNotice("Your X verification is stale. Recheck it before making a new claim.");
+      return;
+    }
+    if (
+      chainProfile.recoveryActive &&
+      !window.confirm(
+        "Making a claim ends your current recovery. Continue and put reputation at risk?",
+      )
+    ) return;
     setComposerOpen(true);
   }
 
@@ -236,40 +289,151 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
     try {
       if (!wallet) {
         const connected = await connectCredenceWallet();
-        const nextProfile = await readChainProfile(connected.address);
-        const rawClaims = await readChainClaims();
+        const [{ nextProfile, nextIdentity, nextChallenge }, rawClaims] = await Promise.all([
+          refreshWalletState(connected.address),
+          readChainClaims(),
+        ]);
         setWallet(connected);
-        setChainProfile(nextProfile);
         setChainClaims(
           rawClaims.map((claim) =>
             productClaim(
               claim,
               connected.address,
               state.profile.displayName,
-              state.profile.handle,
+              nextProfile.xHandle ? `@${nextProfile.xHandle}` : state.profile.handle,
             ),
           ),
         );
         setChainAvailable(true);
         setNotice(
           nextProfile.registered
-            ? `Wallet ${shortAddress(connected.address)} connected. Your on-chain reputation is ready.`
-            : "Wallet connected. Activate it once to receive 100 non-transferable REP.",
+            ? `Wallet ${shortAddress(connected.address)} connected as @${nextProfile.xHandle}.`
+            : nextChallenge.active
+              ? "Wallet connected. Finish the pending X proof to unlock 100 REP."
+              : "Wallet connected. Verify one X account to unlock 100 non-transferable REP.",
         );
+        if (!nextProfile.registered && nextChallenge.active) {
+          setXProofMode("bind");
+          setXProofOpen(true);
+        } else if (nextIdentity.status === "STALE") {
+          setNotice("Wallet connected. Your monthly X verification needs a recheck.");
+        }
       } else if (!chainProfile?.registered) {
-        await wallet.register();
-        const nextProfile = await readChainProfile(wallet.address);
-        const nextStats = await readProtocolStats();
-        setChainProfile(nextProfile);
-        setChainStats(nextStats);
-        setNotice("Your wallet is active with 100 REP. You can now back your first claim.");
+        if (!bindingChallenge?.active) {
+          await wallet.beginXBinding();
+          await refreshWalletState(wallet.address);
+        }
+        setXProofMode("bind");
+        setXProofOpen(true);
+        setNotice("Post the exact challenge on X, then paste that post's URL here.");
       } else {
-        setNotice(`Wallet ${shortAddress(wallet.address)} is connected to Bradbury.`);
+        setNotice(
+          `Wallet ${shortAddress(wallet.address)} is connected as @${chainProfile.xHandle}.`,
+        );
       }
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "The wallet action did not complete.");
     } finally {
       setWalletBusy(false);
+    }
+  }
+
+  async function submitXProof() {
+    if (!wallet || !proofChallenge || walletBusy) return;
+    const proofUrl = xProofUrl.trim();
+    if (!/^https:\/\/(?:www\.)?(?:x\.com|twitter\.com)\/[^/]+\/status\/\d+\/?$/i.test(proofUrl)) {
+      setNotice("Paste the full public X post URL, ending in /status/ and its numeric post ID.");
+      return;
+    }
+
+    setWalletBusy(true);
+    setNotice(null);
+    try {
+      if (xProofMode === "replace") {
+        await wallet.replaceXProof(proofUrl.replace(/\/$/, ""));
+      } else {
+        await wallet.verifyXBinding(proofUrl.replace(/\/$/, ""));
+      }
+      const { nextProfile } = await refreshWalletState(wallet.address);
+      setXProofOpen(false);
+      setXProofUrl("");
+      setNotice(
+        xProofMode === "replace"
+          ? `New proof accepted. @${nextProfile.xHandle} is verified for another 30 days.`
+          : `@${nextProfile.xHandle} is bound to this wallet. Your 100 REP is ready.`,
+      );
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "GenLayer could not verify that X post.",
+      );
+    } finally {
+      setWalletBusy(false);
+    }
+  }
+
+  async function handleIdentityRefresh() {
+    if (!wallet || walletBusy) return;
+    setWalletBusy(true);
+    setNotice(null);
+    try {
+      await wallet.refreshXIdentity();
+      const { nextProfile } = await refreshWalletState(wallet.address);
+      setNotice(`@${nextProfile.xHandle} is verified for another 30 days.`);
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? `${error.message} If the old post was removed, publish the same challenge again and use “New proof”.`
+          : "The monthly X recheck did not complete.",
+      );
+    } finally {
+      setWalletBusy(false);
+    }
+  }
+
+  function openReplacementProof() {
+    if (!chainIdentity?.challenge) {
+      setNotice("The original identity challenge is not available.");
+      return;
+    }
+    setXProofMode("replace");
+    setXProofUrl("");
+    setXProofOpen(true);
+  }
+
+  async function handleRecoveryAction() {
+    if (!wallet || !chainProfile || walletBusy) return;
+    setWalletBusy(true);
+    setNotice(null);
+    try {
+      if (chainProfile.recoveryActive) {
+        await wallet.claimRecovery();
+      } else {
+        await wallet.startRecovery();
+      }
+      const { nextProfile } = await refreshWalletState(wallet.address);
+      setNotice(
+        nextProfile.recoveryActive
+          ? nextProfile.recoverableReputation > 0
+            ? `${nextProfile.recoverableReputation} recovery REP is ready to claim.`
+            : `Recovery is active. The next point unlocks ${formatUnixDate(nextProfile.recoveryNextAt)}.`
+          : "Recovery brought your balance back to 100 REP.",
+      );
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "The recovery action did not complete.");
+    } finally {
+      setWalletBusy(false);
+    }
+  }
+
+  async function copyProofChallenge() {
+    if (!proofChallenge) return;
+    try {
+      await navigator.clipboard.writeText(proofChallenge);
+      setNotice("Challenge copied. Post it by itself so GenLayer can verify it exactly.");
+    } catch {
+      setNotice("Select and copy the challenge, then post it by itself on X.");
     }
   }
 
@@ -280,7 +444,7 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
       id: `preview-${Date.now()}`,
       ownerId: profile.userId,
       ownerName: profile.displayName,
-      ownerHandle: profile.handle,
+      ownerHandle: activeXHandle,
       statement: input.statement,
       category: input.category,
       status: "OPEN",
@@ -295,8 +459,8 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
 
     try {
       if (ledgerMode === "contract") {
-        if (!wallet || !chainProfile?.registered) {
-          throw new Error("Connect and activate a Bradbury wallet before making a claim.");
+        if (!wallet || !chainProfile?.registered || !chainIdentity?.canClaim) {
+          throw new Error("Connect a currently verified X-linked wallet before making a claim.");
         }
         const result = await wallet.makeClaim(input);
         claim = {
@@ -386,8 +550,12 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
                   : !wallet
                     ? "Connect wallet"
                     : !chainProfile?.registered
-                      ? "Activate 100 REP"
-                      : shortAddress(wallet.address)}
+                      ? bindingChallenge?.active
+                        ? "Finish X proof"
+                        : "Verify with X"
+                      : chainProfile.xHandle
+                        ? `@${chainProfile.xHandle}`
+                        : shortAddress(wallet.address)}
               </button>
               <div className="user-chip">
                 <span className="avatar avatar-self">{initials(profile.displayName)}</span>
@@ -409,7 +577,7 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
           <div className="hero-content">
             <div className="hero-proof"><ShieldIcon /> One person. One claim. Their reputation.</div>
             <h1>Say what will happen.<br /><em>Put your reputation on it.</em></h1>
-            <p>You start with 100 reputation points. Back your own public claim: if it is true, your stake returns doubled; if it is false, those points are gone.</p>
+            <p>Bind one public X account to one wallet and start with 100 reputation points. Back your own claim: if it is true, your stake returns doubled; if it is false, those points are gone.</p>
             <div className="hero-actions">
               <button className="primary-cta" onClick={openComposer} type="button">Make your claim <span>↘</span></button>
               <a className="text-cta" href="#how-it-works">See the exact math</a>
@@ -438,10 +606,10 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
         </section>
 
         <section className="ticker" aria-label="Credence rules">
-          <span>STARTING REPUTATION <strong>100 REP</strong></span>
+          <span>VERIFIED START <strong>100 REP</strong></span>
           <span>CORRECT CLAIM <strong>2× STAKE BACK</strong></span>
           <span>WRONG CLAIM <strong>STAKE BURNED</strong></span>
-          <span>COUNTERPARTIES <strong>0</strong></span>
+          <span>BELOW 20 <strong>RECOVER TO 100</strong></span>
           <span>TRUTH LAYER <strong className="ticker-green">GENLAYER</strong></span>
         </section>
 
@@ -485,14 +653,14 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
           <div className="reputation-copy">
             <span className="section-kicker section-kicker-light">YOUR WORD HAS WEIGHT</span>
             <h2>No odds. No pool.<br /><em>Just your record.</em></h2>
-            <p>Your reputation is a single visible balance. Correct claims add the amount you risked. Wrong claims permanently remove it. Every result stays attached to you.</p>
-            <div className="trust-list"><span><i>01</i> Non-transferable points</span><span><i>02</i> One owner per claim</span><span><i>03</i> Immutable wins and misses</span></div>
+            <p>Your reputation is a single visible balance. Correct claims add the amount you risked. Wrong claims permanently remove it. Below 20, a claim-free account can slowly recover to 100—but only a win can go higher.</p>
+            <div className="trust-list"><span><i>01</i> One X account per wallet</span><span><i>02</i> Non-transferable points</span><span><i>03</i> Immutable wins and misses</span></div>
           </div>
 
           <div className="profile-card" id="record">
             <div className="profile-card-top">
-              <div className="profile-identity"><span className="avatar avatar-large avatar-self">{initials(profile.displayName)}</span><div><h3>{profile.displayName}</h3><p>{profile.handle} · {profile.resolvedClaims < 10 ? "Building a record" : "Proven claimant"}</p></div></div>
-              <span className="verified-badge"><ShieldIcon /> {ledgerMode === "contract" ? "Bradbury on-chain" : "Preview ledger"}</span>
+              <div className="profile-identity"><span className="avatar avatar-large avatar-self">{initials(profile.displayName)}</span><div><h3>{profile.displayName}</h3><p>{activeXHandle} · {profile.resolvedClaims < 10 ? "Building a record" : "Proven claimant"}</p></div></div>
+              <span className="verified-badge"><ShieldIcon /> {chainIdentity?.bound ? `X ${chainIdentity.status.toLowerCase()}` : ledgerMode === "contract" ? "Bradbury on-chain" : "Preview ledger"}</span>
             </div>
             <div className="profile-score-grid">
               <div className="profile-score-main"><span>REPUTATION</span><strong>{profile.reputation}</strong><small>{profile.reputation - 100 >= 0 ? "+" : ""}{profile.reputation - 100} from start</small></div>
@@ -500,6 +668,49 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
               <div><span>AT RISK</span><strong>{profile.reputationAtRisk}</strong><small>Locked in open claims</small></div>
               <div><span>ACCURACY</span><strong>{userAccuracy === null ? "—" : `${userAccuracy}%`}</strong><small>{profile.resolvedClaims} resolved</small></div>
             </div>
+            {signedIn && (
+              <div className="identity-recovery-grid">
+                <section className="identity-control" aria-label="X identity verification">
+                  <div className="identity-control-heading">
+                    <span className={`identity-state identity-state-${(chainIdentity?.status || "unbound").toLowerCase()}`}>
+                      <i /> {chainIdentity?.status || "NOT CONNECTED"}
+                    </span>
+                    {chainIdentity?.verifiedUntil ? <small>Recheck by {formatUnixDate(chainIdentity.verifiedUntil)}</small> : <small>One X account · one wallet</small>}
+                  </div>
+                  <strong>{chainIdentity?.bound ? `@${chainIdentity.handle}` : wallet ? "X proof required" : "Connect a wallet to begin"}</strong>
+                  <p>GenLayer reads a public challenge post and binds the X account’s stable ID. The same X account cannot activate another wallet.</p>
+                  <div className="identity-actions">
+                    {!wallet || !chainProfile?.registered ? (
+                      <button disabled={walletBusy} onClick={handleWalletAction} type="button">
+                        {!wallet ? "Connect wallet" : bindingChallenge?.active ? "Finish X proof" : "Verify with X"}
+                      </button>
+                    ) : (
+                      <>
+                        {(chainIdentity?.refreshDue || chainIdentity?.status === "GRACE" || chainIdentity?.status === "STALE") && (
+                          <button disabled={walletBusy} onClick={handleIdentityRefresh} type="button">Recheck X</button>
+                        )}
+                        <button className="identity-action-secondary" disabled={walletBusy} onClick={openReplacementProof} type="button">New proof</button>
+                        {chainIdentity?.proofUrl && <a href={chainIdentity.proofUrl} rel="noreferrer" target="_blank">View proof ↗</a>}
+                      </>
+                    )}
+                  </div>
+                </section>
+                <section className="recovery-control" aria-label="Reputation recovery">
+                  <div className="recovery-control-heading"><span>SAFETY FLOOR</span><small>Never above 100</small></div>
+                  <strong>{chainProfile?.recoveryActive ? `${chainProfile.recoverableReputation} REP ready` : profile.reputation < 20 ? "Recovery available" : "Unlocks below 20 REP"}</strong>
+                  <p>{chainProfile?.recoveryActive ? `Recovery is active. One point unlocks each day; the next checkpoint is ${formatUnixDate(chainProfile.recoveryNextAt)}.` : "With no open claims, wait seven days, then recover one REP per day. Making a new claim ends recovery."}</p>
+                  {wallet && chainProfile && (chainProfile.recoveryActive || (chainProfile.reputation < 20 && chainProfile.openClaims === 0)) && (
+                    <button
+                      disabled={walletBusy || (chainProfile.recoveryActive && chainProfile.recoverableReputation < 1) || !chainIdentity?.canClaim}
+                      onClick={handleRecoveryAction}
+                      type="button"
+                    >
+                      {chainProfile.recoveryActive ? chainProfile.recoverableReputation > 0 ? `Claim ${chainProfile.recoverableReputation} REP` : `Next point ${formatUnixDate(chainProfile.recoveryNextAt)}` : "Start 7-day recovery"}
+                    </button>
+                  )}
+                </section>
+              </div>
+            )}
             <div className="topic-ratings">
               <div className="topic-ratings-header"><span>YOUR CLAIM RECORD</span><span>{profile.totalClaims} total claims</span></div>
               {topicStats.map(({ topic, claims, atRisk }) => (
@@ -522,10 +733,10 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
         <section className="how-section" id="how-it-works">
           <div className="how-heading"><span className="section-kicker">THE EXACT MECHANISM</span><h2>One claim.<br />Three outcomes.</h2></div>
           <div className="how-steps">
-            <article><span>01</span><BoltIcon /><h3>Start with 100 REP</h3><p>Everyone receives the same non-transferable reputation balance. It cannot be bought or transferred.</p></article>
+            <article><span>01</span><BoltIcon /><h3>Verify one X account</h3><p>Post your wallet’s exact challenge. GenLayer binds that X identity once and unlocks 100 non-transferable REP.</p></article>
             <article><span>02</span><ChartIcon /><h3>Back your own claim</h3><p>Write a future statement, freeze its rule and source, then put at least one of your points behind it.</p></article>
             <article><span>03</span><ShieldIcon /><h3>GenLayer checks truth</h3><p>Independent validators resolve your statement TRUE, FALSE, or VOID from the approved evidence.</p></article>
-            <article><span>04</span><TrophyIcon /><h3>True doubles the stake</h3><p>From 100, risking 1 ends at 101 if TRUE, 99 if FALSE, or 100 if VOID. No other user funds it.</p></article>
+            <article><span>04</span><TrophyIcon /><h3>Win beyond 100</h3><p>From 100, risking 1 ends at 101 if TRUE or 99 if FALSE. Below 20, recovery can rebuild only to 100.</p></article>
           </div>
         </section>
 
@@ -533,6 +744,37 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
       </main>
 
       <footer className="site-footer"><a className="brand brand-footer" href="#top"><span className="brand-mark"><MarkIcon /></span><span>CREDENCE</span></a><p>Personal reputation claims, settled by consensus.</p><div><a href="#claims">Claims</a><a href="#reputation">Your record</a><a href={BRADBURY_EXPLORER_URL} rel="noreferrer" target="_blank">Bradbury contract ↗</a></div><span>GenLayer Bradbury · {shortAddress(CREDENCE_CONTRACT_ADDRESS)}</span></footer>
+
+      {xProofOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !walletBusy && setXProofOpen(false)}>
+          <section aria-labelledby="x-proof-title" aria-modal="true" className="forecast-modal x-proof-modal" role="dialog">
+            <button aria-label="Close X verification" className="modal-close" disabled={walletBusy} onClick={() => setXProofOpen(false)} type="button">×</button>
+            <div className="modal-kicker">ONE X ACCOUNT · ONE WALLET</div>
+            <h2 id="x-proof-title">{xProofMode === "replace" ? "Publish a new proof" : "Verify your X identity"}</h2>
+            <p className="modal-rules">Post this exact challenge by itself from the X account you want permanently attached to this wallet. Replies do not count.</p>
+            <div className="x-challenge-box">
+              <span>EXACT POST TEXT</span>
+              <code>{proofChallenge || "Create a challenge from your wallet first."}</code>
+              <button disabled={!proofChallenge} onClick={copyProofChallenge} type="button">Copy challenge</button>
+            </div>
+            <a className="x-post-button" href={xPostIntent} rel="noreferrer" target="_blank">Open X and publish exact text ↗</a>
+            <label className="x-proof-field">
+              <span>Public X post URL</span>
+              <input
+                onChange={(event) => setXProofUrl(event.target.value)}
+                placeholder="https://x.com/yourhandle/status/…"
+                type="url"
+                value={xProofUrl}
+              />
+              <small>GenLayer validators independently check the post, its author’s stable account ID, and the exact challenge.</small>
+            </label>
+            <button className="commit-button" disabled={walletBusy || !proofChallenge || !xProofUrl.trim()} onClick={submitXProof} type="button">
+              {walletBusy ? "GenLayer is checking X…" : xProofMode === "replace" ? "Verify new proof" : "Bind X and unlock 100 REP"}
+              {!walletBusy && <ShieldIcon />}
+            </button>
+          </section>
+        </div>
+      )}
 
       {composerOpen && <ClaimModal availableReputation={profile.availableReputation} busy={busy} mode={ledgerMode} onClose={() => !busy && setComposerOpen(false)} onSubmit={submitClaim} reputation={profile.reputation} />}
     </div>
