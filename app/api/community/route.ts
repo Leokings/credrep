@@ -84,6 +84,7 @@ export async function GET() {
       activity,
     } satisfies CommunityFeed);
   } catch (error) {
+    console.error("community_feed_failed", error);
     const message = error instanceof Error ? error.message : "Community feed unavailable.";
     return Response.json({ error: message }, { status: 503 });
   }

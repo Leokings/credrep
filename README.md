@@ -44,4 +44,8 @@ pytest tests/direct -q
 gltest tests/integration/test_credence_forecasts.py -v -s --network studionet
 ```
 
+The repository also runs the web checks, production dependency audit, GenVM
+lint, and direct contract tests in GitHub Actions. `GET /api/health` reports the
+deployed contract configuration and D1 connectivity without exposing user data.
+
 See `ARCHITECTURE.md` for the trust and settlement boundaries.

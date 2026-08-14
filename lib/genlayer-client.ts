@@ -7,11 +7,24 @@ import {
   ExecutionResult,
   TransactionStatus,
 } from "genlayer-js/types";
-import { CREDENCE_CONTRACT_ADDRESS } from "./deployment";
+import {
+  BRADBURY_CHAIN_ID,
+  BRADBURY_EXPLORER_URL,
+  CREDENCE_CONTRACT_ADDRESS,
+} from "./deployment";
+
+type ProviderListener = (value: unknown) => void;
 
 type BrowserProvider = {
   request(args: { method: string; params?: unknown[] | object }): Promise<unknown>;
+  on?(event: "accountsChanged" | "chainChanged", listener: ProviderListener): void;
+  removeListener?(
+    event: "accountsChanged" | "chainChanged",
+    listener: ProviderListener,
+  ): void;
 };
+
+type OnSubmitted = (transactionHash: `0x${string}`) => void;
 
 export type IdentityStatus =
   | "UNBOUND"
@@ -99,26 +112,35 @@ export type ChainPosition = {
 
 export type ConnectedCredenceWallet = {
   address: `0x${string}`;
-  beginXBinding(): Promise<`0x${string}`>;
+  beginXBinding(onSubmitted?: OnSubmitted): Promise<`0x${string}`>;
   verifyXBinding(
     proofUrl: string,
-    onSubmitted?: (transactionHash: `0x${string}`) => void,
+    onSubmitted?: OnSubmitted,
   ): Promise<`0x${string}`>;
-  beginXReverification(): Promise<`0x${string}`>;
+  beginXReverification(onSubmitted?: OnSubmitted): Promise<`0x${string}`>;
   verifyXReverification(
     proofUrl: string,
-    onSubmitted?: (transactionHash: `0x${string}`) => void,
+    onSubmitted?: OnSubmitted,
   ): Promise<`0x${string}`>;
-  startRecovery(): Promise<`0x${string}`>;
-  claimRecovery(): Promise<`0x${string}`>;
-  makePrediction(input: {
-    marketId: string;
-    prediction: "YES" | "NO";
-    confidenceBps: number;
-    stake: number;
-  }): Promise<`0x${string}`>;
-  resolveMarket(marketId: string): Promise<`0x${string}`>;
-  settlePrediction(marketId: string): Promise<`0x${string}`>;
+  startRecovery(onSubmitted?: OnSubmitted): Promise<`0x${string}`>;
+  claimRecovery(onSubmitted?: OnSubmitted): Promise<`0x${string}`>;
+  makePrediction(
+    input: {
+      marketId: string;
+      prediction: "YES" | "NO";
+      confidenceBps: number;
+      stake: number;
+    },
+    onSubmitted?: OnSubmitted,
+  ): Promise<`0x${string}`>;
+  resolveMarket(
+    marketId: string,
+    onSubmitted?: OnSubmitted,
+  ): Promise<`0x${string}`>;
+  settlePrediction(
+    marketId: string,
+    onSubmitted?: OnSubmitted,
+  ): Promise<`0x${string}`>;
 };
 
 const readClient = createClient({ chain: testnetBradbury });
@@ -378,14 +400,84 @@ function ethereumProvider(): BrowserProvider {
   return provider;
 }
 
-export async function connectCredenceWallet(): Promise<ConnectedCredenceWallet> {
+export function isBradburyChainId(value: unknown): boolean {
+  if (typeof value !== "string" || !/^0x[0-9a-f]+$/i.test(value)) return false;
+  return Number.parseInt(value.slice(2), 16) === BRADBURY_CHAIN_ID;
+}
+
+export async function isBradburyNetwork(): Promise<boolean> {
+  const chainId = await ethereumProvider().request({ method: "eth_chainId" });
+  return isBradburyChainId(chainId);
+}
+
+export async function switchToBradbury(): Promise<void> {
   const provider = ethereumProvider();
-  const accounts = await provider.request({ method: "eth_requestAccounts" });
+  const chainId = `0x${BRADBURY_CHAIN_ID.toString(16)}`;
+  try {
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId }],
+    });
+  } catch (error) {
+    const code =
+      error && typeof error === "object" && "code" in error
+        ? Number((error as { code?: unknown }).code)
+        : 0;
+    if (code !== 4902) throw error;
+    await provider.request({
+      method: "wallet_addEthereumChain",
+      params: [
+        {
+          chainId,
+          chainName: testnetBradbury.name,
+          nativeCurrency: testnetBradbury.nativeCurrency,
+          rpcUrls: [...testnetBradbury.rpcUrls.default.http],
+          blockExplorerUrls: [BRADBURY_EXPLORER_URL],
+        },
+      ],
+    });
+  }
+}
+
+export function watchCredenceProvider(callbacks: {
+  onAccountsChanged(accounts: string[]): void;
+  onChainChanged(chainId: unknown): void;
+}): () => void {
+  let provider: BrowserProvider;
+  try {
+    provider = ethereumProvider();
+  } catch {
+    return () => undefined;
+  }
+  const accountsListener: ProviderListener = (value) => {
+    callbacks.onAccountsChanged(
+      Array.isArray(value)
+        ? value.filter((account): account is string => typeof account === "string")
+        : [],
+    );
+  };
+  const chainListener: ProviderListener = (value) => callbacks.onChainChanged(value);
+  provider.on?.("accountsChanged", accountsListener);
+  provider.on?.("chainChanged", chainListener);
+  return () => {
+    provider.removeListener?.("accountsChanged", accountsListener);
+    provider.removeListener?.("chainChanged", chainListener);
+  };
+}
+
+export async function connectCredenceWallet(
+  accountHint?: string,
+): Promise<ConnectedCredenceWallet> {
+  const provider = ethereumProvider();
+  const accounts = accountHint
+    ? [accountHint]
+    : await provider.request({ method: "eth_requestAccounts" });
   if (!Array.isArray(accounts) || typeof accounts[0] !== "string") {
     throw new Error("No wallet account was selected.");
   }
   const address = accounts[0] as `0x${string}`;
   toCalldataAddress(address);
+  if (!(await isBradburyNetwork())) await switchToBradbury();
 
   const writeClient = createClient({
     chain: testnetBradbury,
@@ -397,7 +489,7 @@ export async function connectCredenceWallet(): Promise<ConnectedCredenceWallet> 
   async function write(
     functionName: string,
     args: unknown[] = [],
-    onSubmitted?: (transactionHash: `0x${string}`) => void,
+    onSubmitted?: OnSubmitted,
   ): Promise<`0x${string}`> {
     const transactionHash = (await writeClient.writeContract({
       address: CREDENCE_CONTRACT_ADDRESS,
@@ -412,22 +504,27 @@ export async function connectCredenceWallet(): Promise<ConnectedCredenceWallet> 
 
   return {
     address,
-    beginXBinding: () => write("begin_x_binding"),
+    beginXBinding: (onSubmitted) => write("begin_x_binding", [], onSubmitted),
     verifyXBinding: (proofUrl, onSubmitted) =>
       write("verify_x_binding", [proofUrl], onSubmitted),
-    beginXReverification: () => write("begin_x_reverification"),
+    beginXReverification: (onSubmitted) =>
+      write("begin_x_reverification", [], onSubmitted),
     verifyXReverification: (proofUrl, onSubmitted) =>
       write("verify_x_reverification", [proofUrl], onSubmitted),
-    startRecovery: () => write("start_recovery"),
-    claimRecovery: () => write("claim_recovery"),
-    makePrediction: ({ marketId, prediction, confidenceBps, stake }) =>
-      write("make_prediction", [
-        marketId,
-        prediction,
-        BigInt(confidenceBps),
-        BigInt(stake),
-      ]),
-    resolveMarket: (marketId) => write("resolve_market", [marketId]),
-    settlePrediction: (marketId) => write("settle_prediction", [marketId]),
+    startRecovery: (onSubmitted) => write("start_recovery", [], onSubmitted),
+    claimRecovery: (onSubmitted) => write("claim_recovery", [], onSubmitted),
+    makePrediction: (
+      { marketId, prediction, confidenceBps, stake },
+      onSubmitted,
+    ) =>
+      write(
+        "make_prediction",
+        [marketId, prediction, BigInt(confidenceBps), BigInt(stake)],
+        onSubmitted,
+      ),
+    resolveMarket: (marketId, onSubmitted) =>
+      write("resolve_market", [marketId], onSubmitted),
+    settlePrediction: (marketId, onSubmitted) =>
+      write("settle_prediction", [marketId], onSubmitted),
   };
 }

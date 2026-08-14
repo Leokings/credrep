@@ -17,6 +17,7 @@ export async function POST(request: Request) {
     const result = await indexBradburyWallet(body.address);
     return Response.json(result);
   } catch (error) {
+    console.error("wallet_index_failed", error);
     const message = error instanceof Error ? error.message : "Wallet sync failed.";
     const status = message.includes("valid EVM wallet") ? 400 : 502;
     return Response.json({ error: message }, { status });

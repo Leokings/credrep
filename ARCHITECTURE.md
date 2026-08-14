@@ -10,7 +10,8 @@ The website fetches active Yes/No questions from Polymarket's Gamma API and
 caches them in D1 for discovery. The cache is not authoritative. On the first
 position, GenLayer validators independently fetch the market by ID and freeze
 its question, rules, slug, and deadline onchain. Validators fetch it again for
-resolution.
+resolution. The feed refreshes while the site is open, and expired feed entries
+are removed from the discovery cache.
 
 ## Identity
 
@@ -56,3 +57,17 @@ GenLayer owns X binding, market verification, REP accounting, positions,
 resolution, calibration scoring, and recovery. D1 owns only the external feed
 cache and non-authoritative site records. The browser wallet signs every action
 that changes a user's state.
+
+## Transaction lifecycle
+
+The browser requires Bradbury before enabling a write. Once a wallet submits a
+transaction, Credence stores its hash on that device, blocks duplicate writes,
+and restores the pending status after a refresh. The user can recheck it or open
+the Bradbury Explorer until the transaction reaches a terminal state.
+
+## Operations
+
+`GET /api/health` checks D1 connectivity and confirms that a contract address is
+configured. Feed/index failures are logged with their route and upstream source.
+Continuous integration runs the web build, lint, rendered-route tests,
+production dependency audit, GenVM lint, and direct contract tests.

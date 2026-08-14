@@ -1,4 +1,4 @@
-import { desc, gt } from "drizzle-orm";
+import { desc, gt, lte } from "drizzle-orm";
 import { sourcedMarkets } from "../../../db/schema";
 import { fetchPolymarketFeed } from "../../../lib/polymarket";
 import type { MarketCategory, MarketFeed } from "../../../lib/product-data";
@@ -37,6 +37,9 @@ async function saveFeed(
         }),
     ),
   );
+  await db
+    .delete(sourcedMarkets)
+    .where(lte(sourcedMarkets.endAt, new Date().toISOString()));
 }
 
 async function cachedFeed(): Promise<MarketFeed | null> {
@@ -69,7 +72,8 @@ export async function GET() {
     const feed = await fetchPolymarketFeed();
     try {
       await saveFeed(feed);
-    } catch {
+    } catch (error) {
+      console.warn("market_cache_write_failed", error);
       // The live public feed remains usable while a new D1 migration settles.
     }
     return Response.json({
@@ -90,7 +94,8 @@ export async function GET() {
     try {
       const cached = await cachedFeed();
       if (cached) return Response.json(cached);
-    } catch {
+    } catch (cacheError) {
+      console.error("market_feed_and_cache_failed", { error, cacheError });
       // Fall through to a clear upstream error.
     }
     const message = error instanceof Error ? error.message : "Market feed unavailable.";

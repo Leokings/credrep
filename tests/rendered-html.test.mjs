@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-async function render() {
+async function render(pathname = "/") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
-    new Request("http://localhost/", { headers: { accept: "text/html" } }),
+    new Request(new URL(pathname, "http://localhost/"), {
+      headers: { accept: "text/html" },
+    }),
     {
       ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) },
       DB: undefined,
@@ -31,4 +33,10 @@ test("server-renders the Credence product", async () => {
   assert.match(html, /Connect wallet/);
   assert.doesNotMatch(html, /Manchester United|Maya Chen|Make your claim|People backing their word/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/);
+});
+
+test("redirects the conventional favicon path", async () => {
+  const response = await render("/favicon.ico");
+  assert.equal(response.status, 308);
+  assert.equal(response.headers.get("location"), "http://localhost/favicon.svg");
 });

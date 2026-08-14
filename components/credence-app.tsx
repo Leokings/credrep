@@ -6,13 +6,16 @@ import type { MarketCategory, MarketFeed, SourcedMarket, Viewer } from "../lib/p
 import {
   CredenceTransactionExecutionError,
   connectCredenceWallet,
+  isBradburyChainId,
   normalizeXProofUrl,
   readBindingChallenge,
   readChainIdentity,
   readChainProfile,
   readProtocolStats,
   readUserPositions,
+  switchToBradbury,
   waitForCredenceTransaction,
+  watchCredenceProvider,
   type BindingChallenge,
   type ChainIdentity,
   type ChainPosition,
@@ -42,6 +45,19 @@ type VerificationAttempt = {
   status: "PENDING" | "FAILED";
   error: string;
 };
+type PendingActionKind =
+  | "PREDICT"
+  | "RESOLVE"
+  | "SETTLE"
+  | "RECOVERY"
+  | "X_CHALLENGE";
+type PendingAction = {
+  transactionHash: `0x${string}`;
+  kind: PendingActionKind;
+  label: string;
+  status: "PENDING" | "FAILED";
+  error: string;
+};
 
 const CATEGORIES: Array<"All" | MarketCategory> = [
   "All",
@@ -58,6 +74,10 @@ const CATEGORIES: Array<"All" | MarketCategory> = [
 
 function verificationStorageKey(address: string) {
   return `credence:x-verification:${CREDENCE_CONTRACT_ADDRESS.toLowerCase()}:${address.toLowerCase()}`;
+}
+
+function actionStorageKey(address: string) {
+  return `credence:pending-action:${CREDENCE_CONTRACT_ADDRESS.toLowerCase()}:${address.toLowerCase()}`;
 }
 
 function readVerificationAttempt(address: string): VerificationAttempt | null {
@@ -97,6 +117,49 @@ function writeVerificationAttempt(
   }
 }
 
+function readPendingAction(address: string): PendingAction | null {
+  try {
+    const stored = window.localStorage.getItem(actionStorageKey(address));
+    if (!stored) return null;
+    const value = JSON.parse(stored) as Partial<PendingAction>;
+    const kinds: PendingActionKind[] = [
+      "PREDICT",
+      "RESOLVE",
+      "SETTLE",
+      "RECOVERY",
+      "X_CHALLENGE",
+    ];
+    if (
+      typeof value.transactionHash !== "string" ||
+      !/^0x[0-9a-f]{64}$/i.test(value.transactionHash) ||
+      !kinds.includes(value.kind as PendingActionKind) ||
+      (value.status !== "PENDING" && value.status !== "FAILED") ||
+      typeof value.label !== "string"
+    ) {
+      return null;
+    }
+    return {
+      transactionHash: value.transactionHash as `0x${string}`,
+      kind: value.kind as PendingActionKind,
+      label: value.label.slice(0, 160),
+      status: value.status,
+      error: typeof value.error === "string" ? value.error : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writePendingAction(address: string, action: PendingAction | null) {
+  try {
+    const key = actionStorageKey(address);
+    if (action) window.localStorage.setItem(key, JSON.stringify(action));
+    else window.localStorage.removeItem(key);
+  } catch {
+    // Device-local tracking prevents accidental resubmission after a refresh.
+  }
+}
+
 function verificationTransactionUrl(transactionHash: string) {
   return `${BRADBURY_EXPLORER_URL}transactions/${transactionHash}`;
 }
@@ -123,6 +186,16 @@ async function fetchCommunityFeed(): Promise<CommunityFeed> {
   });
   const body = (await response.json()) as CommunityFeed & { error?: string };
   if (!response.ok) throw new Error(body.error || "Community feed unavailable.");
+  return body;
+}
+
+async function fetchMarketFeed(signal?: AbortSignal): Promise<MarketFeed> {
+  const response = await fetch("/api/markets", {
+    headers: { accept: "application/json" },
+    signal,
+  });
+  const body = (await response.json()) as MarketFeed & { error?: string };
+  if (!response.ok) throw new Error(body.error || "Market feed unavailable.");
   return body;
 }
 
@@ -185,6 +258,7 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("All");
   const [view, setView] = useState<View>("feed");
   const [wallet, setWallet] = useState<ConnectedCredenceWallet | null>(null);
+  const [networkReady, setNetworkReady] = useState(true);
   const [profile, setProfile] = useState<ChainProfile | null>(null);
   const [identity, setIdentity] = useState<ChainIdentity | null>(null);
   const [challenge, setChallenge] = useState<BindingChallenge | null>(null);
@@ -200,6 +274,7 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
   const [proofUrl, setProofUrl] = useState("");
   const [verificationAttempt, setVerificationAttempt] =
     useState<VerificationAttempt | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
   const loadCommunity = useCallback(async () => {
     try {
@@ -252,16 +327,11 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/api/markets", {
-      headers: { accept: "application/json" },
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const body = (await response.json()) as MarketFeed & { error?: string };
-        if (!response.ok) throw new Error(body.error || "Market feed unavailable.");
-        return body;
+    fetchMarketFeed(controller.signal)
+      .then((body) => {
+        setFeed(body);
+        setFeedError("");
       })
-      .then(setFeed)
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
         setFeedError(error instanceof Error ? error.message : "Market feed unavailable.");
@@ -277,8 +347,24 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
           error instanceof Error ? error.message : "Community feed unavailable.",
         );
       });
-    return () => controller.abort();
-  }, []);
+    const refreshTimer = window.setInterval(() => {
+      fetchMarketFeed()
+        .then((body) => {
+          setFeed(body);
+          setFeedError("");
+        })
+        .catch((error: unknown) => {
+          setFeedError(
+            error instanceof Error ? error.message : "Market feed unavailable.",
+          );
+        });
+      void loadCommunity();
+    }, 5 * 60_000);
+    return () => {
+      controller.abort();
+      window.clearInterval(refreshTimer);
+    };
+  }, [loadCommunity]);
 
   const positionByMarket = useMemo(
     () => new Map(positions.map((position) => [position.marketId, position])),
@@ -309,6 +395,119 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
   ) {
     setVerificationAttempt(attempt);
     writeVerificationAttempt(address, attempt);
+  }
+
+  function rememberPendingAction(
+    address: string,
+    action: PendingAction | null,
+  ) {
+    setPendingAction(action);
+    writePendingAction(address, action);
+  }
+
+  const transactionInFlight =
+    pendingAction?.status === "PENDING" ||
+    verificationAttempt?.status === "PENDING";
+
+  async function checkPendingAction(
+    connected: ConnectedCredenceWallet,
+    action: PendingAction,
+  ) {
+    setBusy("pending-action");
+    setNotice({ tone: "plain", text: `Checking ${action.label.toLowerCase()}…` });
+    try {
+      await waitForCredenceTransaction(action.transactionHash);
+      await loadWallet(connected.address);
+      rememberPendingAction(connected.address, null);
+      setNotice({ tone: "good", text: `${action.label} confirmed.` });
+    } catch (error) {
+      if (error instanceof CredenceTransactionExecutionError) {
+        rememberPendingAction(connected.address, {
+          ...action,
+          status: "FAILED",
+          error: error.message,
+        });
+        setNotice({ tone: "bad", text: `${action.label} failed on-chain.` });
+      } else {
+        rememberPendingAction(connected.address, action);
+        setNotice({
+          tone: "plain",
+          text: "The submitted transaction is still unconfirmed. No new transaction is needed.",
+        });
+      }
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function runTrackedAction(options: {
+    busyKey: string;
+    kind: PendingActionKind;
+    label: string;
+    pendingText: string;
+    successText: string;
+    execute(onSubmitted: (transactionHash: `0x${string}`) => void): Promise<unknown>;
+    afterSuccess?(): void;
+  }) {
+    if (!wallet) return;
+    if (!networkReady) {
+      setNotice({ tone: "plain", text: "Switch your wallet to Bradbury first." });
+      return;
+    }
+    if (transactionInFlight) {
+      setNotice({
+        tone: "plain",
+        text: "A transaction is already being checked. No new transaction is needed.",
+      });
+      return;
+    }
+
+    let submittedAction: PendingAction | null = null;
+    setBusy(options.busyKey);
+    setNotice({ tone: "plain", text: options.pendingText });
+    try {
+      await options.execute((transactionHash) => {
+        submittedAction = {
+          transactionHash,
+          kind: options.kind,
+          label: options.label,
+          status: "PENDING",
+          error: "",
+        };
+        rememberPendingAction(wallet.address, submittedAction);
+        setNotice({
+          tone: "plain",
+          text: "Transaction submitted. Do not send another one while validators check it.",
+        });
+      });
+      await loadWallet(wallet.address);
+      rememberPendingAction(wallet.address, null);
+      options.afterSuccess?.();
+      setNotice({ tone: "good", text: options.successText });
+    } catch (error) {
+      const submitted = submittedAction as PendingAction | null;
+      if (submitted && error instanceof CredenceTransactionExecutionError) {
+        rememberPendingAction(wallet.address, {
+          ...submitted,
+          status: "FAILED",
+          error: error.message,
+        });
+        setNotice({ tone: "bad", text: `${options.label} failed on-chain.` });
+      } else if (submitted) {
+        rememberPendingAction(wallet.address, submitted);
+        setNotice({
+          tone: "plain",
+          text: "The transaction was submitted but is not confirmed. Do not submit another one.",
+        });
+      } else {
+        setNotice({
+          tone: "bad",
+          text: error instanceof Error ? error.message : `${options.label} failed.`,
+        });
+      }
+    } finally {
+      setBusy("");
+    }
   }
 
   async function checkVerification(
@@ -357,6 +556,7 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
   async function connectWallet() {
     let connectedWallet: ConnectedCredenceWallet | null = null;
     let pendingAttempt: VerificationAttempt | null = null;
+    let storedAction: PendingAction | null = null;
     setBusy("connect");
     setNotice(null);
     try {
@@ -364,17 +564,24 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
       connectedWallet = connected;
       const storedAttempt = readVerificationAttempt(connected.address);
       pendingAttempt = storedAttempt?.status === "PENDING" ? storedAttempt : null;
+      storedAction = readPendingAction(connected.address);
       setWallet(connected);
+      setNetworkReady(true);
       setVerificationAttempt(storedAttempt);
+      setPendingAction(storedAction);
       setProofUrl("");
       if (storedAttempt) setIdentityOpen(true);
       await loadWallet(connected.address);
       setNotice({
-        tone: storedAttempt ? "plain" : "good",
+        tone: storedAttempt || storedAction ? "plain" : "good",
         text: storedAttempt
           ? storedAttempt.status === "PENDING"
             ? "A submitted X verification is being checked."
             : "Your last X verification failed. Review it before retrying."
+          : storedAction
+            ? storedAction.status === "PENDING"
+              ? `A submitted ${storedAction.label.toLowerCase()} is being checked.`
+              : `Your last ${storedAction.label.toLowerCase()} failed.`
           : "Wallet connected.",
       });
     } catch (error) {
@@ -384,12 +591,52 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
     }
     if (connectedWallet && pendingAttempt) {
       void checkVerification(connectedWallet, pendingAttempt);
+    } else if (connectedWallet && storedAction?.status === "PENDING") {
+      void checkPendingAction(connectedWallet, storedAction);
+    }
+  }
+
+  function disconnectWallet() {
+    setWallet(null);
+    setProfile(null);
+    setIdentity(null);
+    setChallenge(null);
+    setPositions([]);
+    setPendingAction(null);
+    setVerificationAttempt(null);
+    setIdentityOpen(false);
+    setSelectedMarket(null);
+    setNetworkReady(true);
+    setNotice({ tone: "plain", text: "Wallet disconnected from this page." });
+  }
+
+  async function changeToBradbury() {
+    setBusy("network");
+    try {
+      await switchToBradbury();
+      setNetworkReady(true);
+      setNotice({ tone: "good", text: "Wallet switched to Bradbury." });
+    } catch (error) {
+      setNotice({
+        tone: "bad",
+        text: error instanceof Error ? error.message : "Could not switch network.",
+      });
+    } finally {
+      setBusy("");
     }
   }
 
   function chooseMarket(market: SourcedMarket, prediction: "YES" | "NO") {
     if (!wallet) {
       setNotice({ tone: "plain", text: "Connect your Bradbury wallet first." });
+      return;
+    }
+    if (!networkReady) {
+      setNotice({ tone: "plain", text: "Switch your wallet to Bradbury first." });
+      return;
+    }
+    if (transactionInFlight) {
+      setNotice({ tone: "plain", text: "Wait for your submitted transaction to finish." });
       return;
     }
     if (!profile?.registered || !identity?.canPredict) {
@@ -409,27 +656,35 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
       setNotice({ tone: "bad", text: `Stake between 1 and ${maximumStake} REP.` });
       return;
     }
-    setBusy("predict");
-    setNotice({ tone: "plain", text: "GenLayer validators are checking the source…" });
-    try {
-      await wallet.makePrediction({
-        marketId: selectedMarket.id,
-        prediction: selection,
-        confidenceBps: confidence * 100,
-        stake,
-      });
-      await loadWallet(wallet.address);
-      setSelectedMarket(null);
-      setNotice({ tone: "good", text: `${stake} REP now backs ${selection}.` });
-    } catch (error) {
-      setNotice({ tone: "bad", text: error instanceof Error ? error.message : "Prediction failed." });
-    } finally {
-      setBusy("");
-    }
+    await runTrackedAction({
+      busyKey: "predict",
+      kind: "PREDICT",
+      label: `Back ${selection} with ${stake} REP`,
+      pendingText: "GenLayer validators are checking the source…",
+      successText: `${stake} REP now backs ${selection}.`,
+      execute: (onSubmitted) =>
+        wallet.makePrediction(
+          {
+            marketId: selectedMarket.id,
+            prediction: selection,
+            confidenceBps: confidence * 100,
+            stake,
+          },
+          onSubmitted,
+        ),
+      afterSuccess: () => setSelectedMarket(null),
+    });
   }
 
   async function beginProof() {
     if (!wallet) return;
+    if (pendingAction?.status === "PENDING") {
+      setNotice({
+        tone: "plain",
+        text: "Your previous transaction is still pending. No new transaction is needed.",
+      });
+      return;
+    }
     if (verificationAttempt?.status === "PENDING") {
       setNotice({
         tone: "plain",
@@ -438,23 +693,26 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
       return;
     }
     rememberVerification(wallet.address, null);
-    setBusy("identity");
-    setNotice({ tone: "plain", text: "Creating a fresh verification challenge…" });
-    try {
-      if (identity?.bound) await wallet.beginXReverification();
-      else await wallet.beginXBinding();
-      await loadWallet(wallet.address);
-      setNotice({ tone: "good", text: "Challenge ready. Post it exactly as shown." });
-    } catch (error) {
-      setNotice({ tone: "bad", text: error instanceof Error ? error.message : "Could not create challenge." });
-    } finally {
-      setBusy("");
-    }
+    await runTrackedAction({
+      busyKey: "identity",
+      kind: "X_CHALLENGE",
+      label: identity?.bound ? "Create X recheck" : "Create X verification",
+      pendingText: "Creating a fresh verification challenge…",
+      successText: "Challenge ready. Post it exactly as shown.",
+      execute: (onSubmitted) =>
+        identity?.bound
+          ? wallet.beginXReverification(onSubmitted)
+          : wallet.beginXBinding(onSubmitted),
+    });
   }
 
   async function verifyProof(event: React.FormEvent) {
     event.preventDefault();
     if (!wallet || !challenge?.active) return;
+    if (pendingAction?.status === "PENDING") {
+      setNotice({ tone: "plain", text: "Wait for your submitted transaction to finish." });
+      return;
+    }
     if (verificationAttempt) {
       setNotice({
         tone: "plain",
@@ -533,47 +791,107 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
 
   async function resolvePosition(position: ChainPosition) {
     if (!wallet) return;
-    setBusy(position.marketId);
-    setNotice({ tone: "plain", text: "Validators are checking the final Polymarket result…" });
-    try {
-      await wallet.resolveMarket(position.marketId);
-      await loadWallet(wallet.address);
-      setNotice({ tone: "good", text: "Market resolved. Settle your position." });
-    } catch (error) {
-      setNotice({ tone: "bad", text: error instanceof Error ? error.message : "Resolution is not ready." });
-    } finally {
-      setBusy("");
-    }
+    await runTrackedAction({
+      busyKey: position.marketId,
+      kind: "RESOLVE",
+      label: "Resolve market",
+      pendingText: "Validators are checking the final Polymarket result…",
+      successText: "Market resolved. Settle your position.",
+      execute: (onSubmitted) =>
+        wallet.resolveMarket(position.marketId, onSubmitted),
+    });
   }
 
   async function settlePosition(position: ChainPosition) {
     if (!wallet) return;
-    setBusy(position.marketId);
-    try {
-      await wallet.settlePrediction(position.marketId);
-      await loadWallet(wallet.address);
-      setNotice({ tone: "good", text: "Your REP and Prediction Score are updated." });
-    } catch (error) {
-      setNotice({ tone: "bad", text: error instanceof Error ? error.message : "Settlement failed." });
-    } finally {
-      setBusy("");
-    }
+    await runTrackedAction({
+      busyKey: position.marketId,
+      kind: "SETTLE",
+      label: "Settle prediction",
+      pendingText: "Submitting settlement…",
+      successText: "Your REP and Prediction Score are updated.",
+      execute: (onSubmitted) =>
+        wallet.settlePrediction(position.marketId, onSubmitted),
+    });
   }
 
   async function recover(action: "start" | "claim") {
     if (!wallet) return;
-    setBusy("recovery");
-    try {
-      if (action === "start") await wallet.startRecovery();
-      else await wallet.claimRecovery();
-      await loadWallet(wallet.address);
-      setNotice({ tone: "good", text: action === "start" ? "REP recovery started." : "Recovered REP claimed." });
-    } catch (error) {
-      setNotice({ tone: "bad", text: error instanceof Error ? error.message : "Recovery action failed." });
-    } finally {
-      setBusy("");
-    }
+    await runTrackedAction({
+      busyKey: "recovery",
+      kind: "RECOVERY",
+      label: action === "start" ? "Start REP recovery" : "Claim recovered REP",
+      pendingText: action === "start" ? "Starting REP recovery…" : "Claiming recovered REP…",
+      successText: action === "start" ? "REP recovery started." : "Recovered REP claimed.",
+      execute: (onSubmitted) =>
+        action === "start"
+          ? wallet.startRecovery(onSubmitted)
+          : wallet.claimRecovery(onSubmitted),
+    });
   }
+
+  const connectedAddress = wallet?.address;
+  useEffect(() => {
+    if (!connectedAddress) return;
+    return watchCredenceProvider({
+      onAccountsChanged(accounts) {
+        const nextAddress = accounts[0];
+        if (!nextAddress) {
+          setWallet(null);
+          setProfile(null);
+          setIdentity(null);
+          setChallenge(null);
+          setPositions([]);
+          setPendingAction(null);
+          setVerificationAttempt(null);
+          setIdentityOpen(false);
+          setSelectedMarket(null);
+          setNetworkReady(true);
+          setNotice({ tone: "plain", text: "Wallet disconnected from this page." });
+          return;
+        }
+        if (nextAddress.toLowerCase() === connectedAddress.toLowerCase()) return;
+        void (async () => {
+          setBusy("connect");
+          try {
+            const connected = await connectCredenceWallet(nextAddress);
+            setWallet(connected);
+            setNetworkReady(true);
+            setVerificationAttempt(readVerificationAttempt(connected.address));
+            setPendingAction(readPendingAction(connected.address));
+            setIdentityOpen(false);
+            setSelectedMarket(null);
+            await loadWallet(connected.address);
+            setNotice({ tone: "good", text: "Connected wallet account changed." });
+          } catch (error) {
+            setNotice({
+              tone: "bad",
+              text: error instanceof Error ? error.message : "Could not load the new wallet account.",
+            });
+          } finally {
+            setBusy("");
+          }
+        })();
+      },
+      onChainChanged(chainId) {
+        const ready = isBradburyChainId(chainId);
+        setNetworkReady(ready);
+        if (!ready) {
+          setNotice({ tone: "plain", text: "Switch your wallet back to Bradbury to continue." });
+        }
+      },
+    });
+  }, [connectedAddress, loadWallet]);
+
+  useEffect(() => {
+    if (!connectedAddress) return;
+    const reconciliationTimer = window.setInterval(() => {
+      loadWallet(connectedAddress).catch(() => {
+        setCommunityError("Wallet index refresh will retry automatically.");
+      });
+    }, 5 * 60_000);
+    return () => window.clearInterval(reconciliationTimer);
+  }, [connectedAddress, loadWallet]);
 
   return (
     <div className="app-shell">
@@ -582,7 +900,9 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
           <span className="brand-mark"><MarkIcon /></span>
           CREDENCE
         </button>
-        <div className="network-pill"><span /> Polymarket · Bradbury</div>
+        <div className={`network-pill ${wallet && !networkReady ? "network-pill-wrong" : ""}`}>
+          <span /> {wallet && !networkReady ? "Wrong network" : "Polymarket · Bradbury"}
+        </div>
         <div className="header-actions">
           {signedIn ? (
             <span className="viewer-name">{viewer?.displayName?.split(" ")[0]}</span>
@@ -594,8 +914,19 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
               <ShieldIcon /> {identity?.bound ? `@${identity.handle}` : "Verify X"}
             </button>
           )}
-          <button className="wallet-button" onClick={connectWallet} disabled={Boolean(busy)}>
-            {wallet ? shortAddress(wallet.address) : busy === "connect" ? "Connecting…" : "Connect wallet"}
+          <button
+            className="wallet-button"
+            onClick={wallet ? networkReady ? disconnectWallet : changeToBradbury : connectWallet}
+            disabled={Boolean(busy)}
+            title={wallet && networkReady ? "Disconnect wallet" : undefined}
+          >
+            {wallet
+              ? networkReady
+                ? shortAddress(wallet.address)
+                : "Switch network"
+              : busy === "connect"
+                ? "Connecting…"
+                : "Connect wallet"}
           </button>
         </div>
       </header>
@@ -604,6 +935,35 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
         <button className={`notice notice-${notice.tone}`} onClick={() => setNotice(null)}>
           {notice.text}<span>×</span>
         </button>
+      )}
+
+      {pendingAction && wallet && (
+        <div className={`transaction-status transaction-status-${pendingAction.status.toLowerCase()}`} role="status">
+          <div>
+            <strong>{pendingAction.status === "PENDING" ? `${pendingAction.label} submitted` : `${pendingAction.label} failed`}</strong>
+            <span>{pendingAction.status === "PENDING" ? "Validators are checking it." : pendingAction.error || "The state change was not applied."}</span>
+          </div>
+          <a href={verificationTransactionUrl(pendingAction.transactionHash)} target="_blank" rel="noreferrer">
+            Explorer ↗
+          </a>
+          <button
+            disabled={busy === "pending-action"}
+            onClick={() => {
+              if (pendingAction.status === "PENDING") {
+                void checkPendingAction(wallet, pendingAction);
+              } else {
+                rememberPendingAction(wallet.address, null);
+                setNotice(null);
+              }
+            }}
+          >
+            {busy === "pending-action"
+              ? "Checking…"
+              : pendingAction.status === "PENDING"
+                ? "Check status"
+                : "Dismiss"}
+          </button>
+        </div>
       )}
 
       <main>
@@ -675,9 +1035,9 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
                   <div className="recovery-card">
                     <div><strong>REP recovery</strong><span>{profile.recoveryActive ? `Next claim ${formatDate(profile.recoveryNextAt)}` : "Recover slowly toward 100."}</span></div>
                     {!profile.recoveryActive ? (
-                      <button disabled={busy === "recovery"} onClick={() => recover("start")}>Start</button>
+                      <button disabled={busy === "recovery" || transactionInFlight || !networkReady} onClick={() => recover("start")}>Start</button>
                     ) : profile.recoverableReputation > 0 ? (
-                      <button disabled={busy === "recovery"} onClick={() => recover("claim")}>Claim {profile.recoverableReputation}</button>
+                      <button disabled={busy === "recovery" || transactionInFlight || !networkReady} onClick={() => recover("claim")}>Claim {profile.recoverableReputation}</button>
                     ) : null}
                   </div>
                 )}
@@ -698,8 +1058,8 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
                           </div>
                           <div className="position-action">
                             {position.status !== "OPEN" && position.status !== "VOID" && <Metric label="Score" value={percent(position.scoreBps)} />}
-                            {canResolve && <button disabled={busy === position.marketId} onClick={() => resolvePosition(position)}>Resolve</button>}
-                            {canSettle && <button disabled={busy === position.marketId} onClick={() => settlePosition(position)}>Settle</button>}
+                            {canResolve && <button disabled={busy === position.marketId || transactionInFlight || !networkReady} onClick={() => resolvePosition(position)}>Resolve</button>}
+                            {canSettle && <button disabled={busy === position.marketId || transactionInFlight || !networkReady} onClick={() => settlePosition(position)}>Settle</button>}
                             {position.status === "OPEN" && !canResolve && !canSettle && <span>Ends {formatDate(position.market.endTimeUnix)}</span>}
                           </div>
                         </article>
@@ -823,7 +1183,7 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
               <label className="field-label"><span>Confidence <strong>{confidence}%</strong></span><input type="range" min="50" max="95" step="1" value={confidence} onChange={(event) => setConfidence(Number(event.target.value))} /></label>
               <label className="field-label"><span>REP at risk <small>Max {maximumStake}</small></span><input className="number-input" type="number" min="1" max={maximumStake} value={stake} onChange={(event) => setStake(Number(event.target.value))} /></label>
               <div className="settlement-preview"><span>Correct</span><strong>+{stake} REP</strong><span>Wrong</span><strong>−{stake} REP</strong></div>
-              <button className="primary-button" disabled={busy === "predict" || maximumStake < 1} type="submit">{busy === "predict" ? "Checking source…" : `Back ${selection} with ${stake} REP`}</button>
+              <button className="primary-button" disabled={busy === "predict" || maximumStake < 1 || transactionInFlight || !networkReady} type="submit">{busy === "predict" ? "Checking source…" : `Back ${selection} with ${stake} REP`}</button>
             </form>
           </section>
         </div>
@@ -844,7 +1204,7 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
                   <button type="button" onClick={() => navigator.clipboard.writeText(challenge.challenge)}>Copy</button>
                   <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(challenge.challenge)}`} target="_blank" rel="noreferrer">Post on X ↗</a>
                 </div>
-                <label className="field-label"><span>Post URL</span><input className="text-input" required disabled={Boolean(verificationAttempt)} value={proofUrl} onChange={(event) => setProofUrl(event.target.value)} placeholder="https://x.com/you/status/…" /></label>
+                <label className="field-label"><span>Post URL</span><input className="text-input" required disabled={Boolean(verificationAttempt) || pendingAction?.status === "PENDING" || !networkReady} value={proofUrl} onChange={(event) => setProofUrl(event.target.value)} placeholder="https://x.com/you/status/…" /></label>
                 {verificationAttempt ? (
                   <div className={`verification-status verification-status-${verificationAttempt.status.toLowerCase()}`} role="status">
                     <strong>{verificationAttempt.status === "PENDING" ? "Verification submitted" : "Verification failed"}</strong>
@@ -876,13 +1236,13 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
                     </button>
                   </div>
                 ) : (
-                  <button className="primary-button" disabled={busy === "identity"} type="submit">{busy === "identity" ? "Verifying…" : challenge.purpose === "REVERIFY" ? "Reverify" : "Verify and receive 100 REP"}</button>
+                  <button className="primary-button" disabled={busy === "identity" || pendingAction?.status === "PENDING" || !networkReady} type="submit">{busy === "identity" ? "Verifying…" : challenge.purpose === "REVERIFY" ? "Reverify" : "Verify and receive 100 REP"}</button>
                 )}
               </form>
             ) : (
               <div className="identity-start">
                 <p>{identity?.bound ? "A fresh post rechecks that you still control the same X account." : "One X account binds to one wallet."}</p>
-                <button className="primary-button" disabled={busy === "identity"} onClick={beginProof}>{busy === "identity" ? "Creating…" : identity?.bound ? "Create recheck" : "Create verification"}</button>
+                <button className="primary-button" disabled={busy === "identity" || transactionInFlight || !networkReady} onClick={beginProof}>{busy === "identity" ? "Creating…" : identity?.bound ? "Create recheck" : "Create verification"}</button>
               </div>
             )}
           </section>
