@@ -29,6 +29,13 @@
       "when": 1786707810815,
       "tag": "0003_sourced_markets",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1786709220603,
+      "tag": "0004_remove_demo_data",
+      "breakpoints": true
     }
   ]
 }
