@@ -44,6 +44,7 @@ RECOVERY_TRIGGER_BELOW = 20
 RECOVERY_TARGET = 100
 RECOVERY_COOLDOWN_SECONDS = 7 * 24 * 60 * 60
 RECOVERY_STEP_SECONDS = 24 * 60 * 60
+MARKET_VOID_TIMEOUT_SECONDS = 30 * 24 * 60 * 60
 
 POLYMARKET_API_ROOT = "https://gamma-api.polymarket.com/markets/"
 POLYMARKET_SITE_ROOT = "https://polymarket.com/event/"
@@ -432,6 +433,7 @@ class CredenceForecasts(gl.Contract):
     position_created_at: TreeMap[str, str]
     position_settled_at: TreeMap[str, str]
     user_position_ids: TreeMap[str, str]
+    upgrade_authority: Address
 
     def __init__(self, starting_reputation: u256, max_stake_bps: u256):
         initial = int(starting_reputation)
@@ -442,6 +444,9 @@ class CredenceForecasts(gl.Contract):
             _expected("invalid_max_stake_bps")
         self.starting_reputation = starting_reputation
         self.max_stake_bps = max_stake_bps
+        self.upgrade_authority = gl.message.sender_address
+        root = gl.storage.Root.get()
+        root.upgraders.get().append(gl.message.sender_address)
 
     def _activate_user(self, account: Address) -> None:
         if self.registered.get(account, False):
@@ -942,6 +947,38 @@ class CredenceForecasts(gl.Contract):
         )
 
     @gl.public.write
+    def void_stale_market(self, market_id: str) -> None:
+        normalized_id = _market_id(market_id)
+        if not self.market_exists.get(normalized_id, False):
+            _expected("market_not_found")
+        if self.market_statuses[normalized_id] != MARKET_OPEN:
+            _expected("market_not_open")
+        now = _now_unix()
+        void_after = (
+            int(self.market_end_times[normalized_id])
+            + MARKET_VOID_TIMEOUT_SECONDS
+        )
+        if now < void_after:
+            _expected("market_void_window_not_open")
+
+        self.market_outcomes[normalized_id] = OUTCOME_VOID
+        self.market_statuses[normalized_id] = MARKET_VOID
+        self.market_resolved_at[normalized_id] = str(
+            gl.message_raw["datetime"]
+        )
+
+    @gl.public.write
+    def upgrade(self, new_code: bytes) -> None:
+        if gl.message.sender_address != self.upgrade_authority:
+            _expected("only_upgrade_authority")
+        if len(new_code) == 0:
+            _expected("upgrade_code_required")
+        root = gl.storage.Root.get()
+        code = root.code.get()
+        code.truncate()
+        code.extend(new_code)
+
+    @gl.public.write
     def settle_prediction(self, market_id: str) -> None:
         account = gl.message.sender_address
         normalized_id = _market_id(market_id)
@@ -1081,6 +1118,8 @@ class CredenceForecasts(gl.Contract):
             "slug": self.market_slugs[normalized_id],
             "source_url": self.market_source_urls[normalized_id],
             "end_time_unix": int(self.market_end_times[normalized_id]),
+            "void_after_unix": int(self.market_end_times[normalized_id])
+            + MARKET_VOID_TIMEOUT_SECONDS,
             "status": self.market_statuses[normalized_id],
             "outcome": self.market_outcomes.get(normalized_id, ""),
             "prediction_count": int(
@@ -1211,4 +1250,13 @@ class CredenceForecasts(gl.Contract):
             "x_verification_validity_seconds": X_VERIFICATION_VALIDITY_SECONDS,
             "x_verification_grace_seconds": X_VERIFICATION_GRACE_SECONDS,
             "x_reverification_window_seconds": X_REVERIFICATION_WINDOW_SECONDS,
+            "market_void_timeout_seconds": MARKET_VOID_TIMEOUT_SECONDS,
+        }
+
+    @gl.public.view
+    def get_governance(self) -> dict[str, Any]:
+        return {
+            "upgradeable": True,
+            "upgrade_authority": str(self.upgrade_authority),
+            "market_void_timeout_seconds": MARKET_VOID_TIMEOUT_SECONDS,
         }

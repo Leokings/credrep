@@ -9,6 +9,8 @@ counterparty, or payout pool in Credence.
 - Correct: return the stake plus an equal REP bonus.
 - Wrong: permanently burn the stake.
 - Void: refund the stake.
+- If Polymarket never finalizes a question, anyone can void it 30 days after
+  its deadline so REP cannot remain locked indefinitely.
 - Prediction Score averages a Brier-style calibration score using each stated
   confidence, while accuracy is tracked separately.
 - Below 20 REP, an account with no open position can slowly recover to 100.
@@ -21,11 +23,13 @@ scores, and settlement.
 ## Bradbury
 
 - Chain ID: `4221`
-- Contract: `0xc50bFcE3729182fE251BeAE0b759C8Fc1b8f649e`
-- Deployment transaction: `0xab5db18406683d8449f05a8b7a115a8c54dc6c607a7eaf87d2938a1bc0246564`
+- Contract: `0x0d2527Fd9FFdC2fb648C55bb8dBf4Cb32452E51d`
+- Deployment transaction: `0x3956ffb5379a36339719da05619f8be558e01d0939c8290927754e3bb20aa3a3`
+- Upgrade authority: `0x91B1b2D1f2De66400fcbeAEbadB8a5330eB28DC0`
 
-The deployer is a dedicated Credence wallet. Product users connect and sign
-with their own wallets; the site never receives the deployer key.
+The deployer is a dedicated Credence wallet and is registered onchain as the
+upgrade authority. Product users connect and sign with their own wallets; the
+site never receives the deployer key.
 
 ## Local development
 

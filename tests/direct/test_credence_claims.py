@@ -412,6 +412,53 @@ def test_void_market_refunds_rep_without_affecting_prediction_score(
     assert profile["void_predictions"] == 1
 
 
+def test_anyone_can_void_a_market_after_thirty_days_and_refund_rep(
+    credence, direct_vm, direct_alice, direct_bob
+):
+    register(credence, direct_vm, direct_alice)
+    predict(credence, direct_vm, direct_alice, stake=5)
+
+    direct_vm.sender = direct_bob
+    direct_vm.warp("2026-09-13T11:59:59+00:00")
+    with direct_vm.expect_revert("market_void_window_not_open"):
+        credence.void_stale_market("2063134")
+
+    direct_vm.warp("2026-09-13T12:00:00+00:00")
+    credence.void_stale_market("2063134")
+    market = credence.get_market("2063134")
+    assert market["status"] == "VOID"
+    assert market["outcome"] == "VOID"
+    assert market["void_after_unix"] == 1_789_300_800
+
+    direct_vm.sender = direct_alice
+    credence.settle_prediction("2063134")
+    profile = credence.get_user_profile(direct_alice)
+    assert profile["reputation"] == 100
+    assert profile["reputation_at_risk"] == 0
+    assert profile["resolved_predictions"] == 0
+    assert profile["prediction_score_bps"] == 0
+    assert profile["void_predictions"] == 1
+
+
+def test_only_registered_upgrade_authority_can_replace_code(
+    credence, direct_vm, direct_owner, direct_alice
+):
+    governance = credence.get_governance()
+    assert governance["upgradeable"] is True
+    assert governance["upgrade_authority"].lower() == (
+        "0x" + bytes(direct_owner).hex()
+    )
+    assert governance["market_void_timeout_seconds"] == 30 * 24 * 60 * 60
+
+    direct_vm.sender = direct_alice
+    with direct_vm.expect_revert("only_upgrade_authority"):
+        credence.upgrade(b"replacement")
+
+    direct_vm.sender = direct_owner
+    with direct_vm.expect_revert("upgrade_code_required"):
+        credence.upgrade(b"")
+
+
 def test_score_averages_calibration_across_resolved_predictions(
     credence, direct_vm, direct_alice
 ):

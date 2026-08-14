@@ -48,6 +48,7 @@ type VerificationAttempt = {
 type PendingActionKind =
   | "PREDICT"
   | "RESOLVE"
+  | "VOID"
   | "SETTLE"
   | "RECOVERY"
   | "X_CHALLENGE";
@@ -125,6 +126,7 @@ function readPendingAction(address: string): PendingAction | null {
     const kinds: PendingActionKind[] = [
       "PREDICT",
       "RESOLVE",
+      "VOID",
       "SETTLE",
       "RECOVERY",
       "X_CHALLENGE",
@@ -815,6 +817,19 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
     });
   }
 
+  async function voidPosition(position: ChainPosition) {
+    if (!wallet) return;
+    await runTrackedAction({
+      busyKey: position.marketId,
+      kind: "VOID",
+      label: "Void stale market",
+      pendingText: "Submitting the 30-day refund fallback…",
+      successText: "Market voided. Settle to reclaim your REP.",
+      execute: (onSubmitted) =>
+        wallet.voidStaleMarket(position.marketId, onSubmitted),
+    });
+  }
+
   async function recover(action: "start" | "claim") {
     if (!wallet) return;
     await runTrackedAction({
@@ -1048,6 +1063,7 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
                   <div className="position-list">
                     {positions.map((position) => {
                       const canResolve = position.status === "OPEN" && position.market.status === "OPEN" && feedTimeUnix >= position.market.endTimeUnix;
+                      const canVoid = position.status === "OPEN" && position.market.status === "OPEN" && feedTimeUnix >= position.market.voidAfterUnix;
                       const canSettle = position.status === "OPEN" && position.market.status !== "OPEN";
                       return (
                         <article className="position-card" key={position.marketId}>
@@ -1059,6 +1075,7 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
                           <div className="position-action">
                             {position.status !== "OPEN" && position.status !== "VOID" && <Metric label="Score" value={percent(position.scoreBps)} />}
                             {canResolve && <button disabled={busy === position.marketId || transactionInFlight || !networkReady} onClick={() => resolvePosition(position)}>Resolve</button>}
+                            {canVoid && <button disabled={busy === position.marketId || transactionInFlight || !networkReady} onClick={() => voidPosition(position)}>Void &amp; refund</button>}
                             {canSettle && <button disabled={busy === position.marketId || transactionInFlight || !networkReady} onClick={() => settlePosition(position)}>Settle</button>}
                             {position.status === "OPEN" && !canResolve && !canSettle && <span>Ends {formatDate(position.market.endTimeUnix)}</span>}
                           </div>

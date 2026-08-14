@@ -53,4 +53,12 @@ def test_live_polymarket_question_reaches_genlayer_consensus():
     assert stored["question"] == " ".join(source_market["question"].split())
     assert stored["status"] == "OPEN"
     assert stored["source_url"].startswith("https://polymarket.com/event/")
+    assert stored["void_after_unix"] == int(
+        datetime.fromisoformat(
+            str(source_market["endDate"]).replace("Z", "+00:00")
+        ).timestamp()
+    ) + (30 * 24 * 60 * 60)
     assert contract.get_protocol_stats().call()["markets"] == 1
+    governance = contract.get_governance().call()
+    assert governance["upgradeable"] is True
+    assert governance["market_void_timeout_seconds"] == 30 * 24 * 60 * 60

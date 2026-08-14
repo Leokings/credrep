@@ -82,6 +82,7 @@ export type ChainProtocolStats = {
   predictions: number;
   startingReputation: number;
   maxStakeBps: number;
+  marketVoidTimeoutSeconds: number;
 };
 
 export type ChainMarket = {
@@ -91,6 +92,7 @@ export type ChainMarket = {
   slug: string;
   sourceUrl: string;
   endTimeUnix: number;
+  voidAfterUnix: number;
   status: "OPEN" | "RESOLVED" | "VOID";
   outcome: "YES" | "NO" | "VOID" | "";
   predictionCount: number;
@@ -134,6 +136,10 @@ export type ConnectedCredenceWallet = {
     onSubmitted?: OnSubmitted,
   ): Promise<`0x${string}`>;
   resolveMarket(
+    marketId: string,
+    onSubmitted?: OnSubmitted,
+  ): Promise<`0x${string}`>;
+  voidStaleMarket(
     marketId: string,
     onSubmitted?: OnSubmitted,
   ): Promise<`0x${string}`>;
@@ -326,6 +332,7 @@ export async function readProtocolStats(): Promise<ChainProtocolStats> {
     predictions: asNumber(raw.predictions),
     startingReputation: asNumber(raw.starting_reputation),
     maxStakeBps: asNumber(raw.max_stake_bps),
+    marketVoidTimeoutSeconds: asNumber(raw.market_void_timeout_seconds),
   };
 }
 
@@ -344,6 +351,7 @@ export async function readChainMarket(marketId: string): Promise<ChainMarket> {
     slug: asString(raw.slug),
     sourceUrl: asString(raw.source_url),
     endTimeUnix: asNumber(raw.end_time_unix),
+    voidAfterUnix: asNumber(raw.void_after_unix),
     status: asString(raw.status) as ChainMarket["status"],
     outcome: asString(raw.outcome) as ChainMarket["outcome"],
     predictionCount: asNumber(raw.prediction_count),
@@ -524,6 +532,8 @@ export async function connectCredenceWallet(
       ),
     resolveMarket: (marketId, onSubmitted) =>
       write("resolve_market", [marketId], onSubmitted),
+    voidStaleMarket: (marketId, onSubmitted) =>
+      write("void_stale_market", [marketId], onSubmitted),
     settlePrediction: (marketId, onSubmitted) =>
       write("settle_prediction", [marketId], onSubmitted),
   };

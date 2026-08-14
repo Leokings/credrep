@@ -33,6 +33,10 @@ For a 1 REP position opened from a 100 REP balance:
 Stake moves from available REP to at-risk REP while open. Settlement is lazy:
 the market resolves once, then each owner settles their own position.
 
+If the source never publishes a final result, any wallet can deterministically
+void the market 30 days after its deadline. Settlement then refunds each stake
+without changing accuracy or Prediction Score.
+
 ## Prediction Score
 
 Confidence is between 50% and 95%. For each definitive outcome, the contract
@@ -57,6 +61,10 @@ GenLayer owns X binding, market verification, REP accounting, positions,
 resolution, calibration scoring, and recovery. D1 owns only the external feed
 cache and non-authoritative site records. The browser wallet signs every action
 that changes a user's state.
+
+The current Bradbury contract registers the dedicated Credence deployer as its
+upgrade authority. Future code upgrades must preserve the declared storage
+layout, and the deployed code and transaction remain publicly inspectable.
 
 ## Transaction lifecycle
 
