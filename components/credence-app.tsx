@@ -461,7 +461,7 @@ export function CredenceApp() {
     action: PendingAction,
   ) {
     setBusy("pending-action");
-    setNotice({ tone: "plain", text: `Checking ${action.label.toLowerCase()}…` });
+    setNotice({ tone: "plain", text: "Checking transaction…" });
     try {
       await waitForCredenceTransaction(action.transactionHash);
       await loadWallet(connected.address, true, connected);
@@ -479,7 +479,7 @@ export function CredenceApp() {
         rememberPendingAction(connected.address, action);
         setNotice({
           tone: "plain",
-          text: "The submitted transaction is still unconfirmed. No new transaction is needed.",
+          text: "Transaction pending.",
         });
       }
     } finally {
@@ -504,7 +504,7 @@ export function CredenceApp() {
     if (transactionInFlight) {
       setNotice({
         tone: "plain",
-        text: "A transaction is already being checked. No new transaction is needed.",
+        text: "Transaction pending.",
       });
       return;
     }
@@ -524,7 +524,7 @@ export function CredenceApp() {
         rememberPendingAction(wallet.address, submittedAction);
         setNotice({
           tone: "plain",
-          text: "Transaction submitted. Do not send another one while validators check it.",
+          text: "Transaction pending.",
         });
       });
       await loadWallet(wallet.address, false, wallet);
@@ -544,7 +544,7 @@ export function CredenceApp() {
         rememberPendingAction(wallet.address, submitted);
         setNotice({
           tone: "plain",
-          text: "The transaction was submitted but is not confirmed. Do not submit another one.",
+          text: "Transaction pending.",
         });
       } else {
         setNotice({
@@ -563,7 +563,7 @@ export function CredenceApp() {
   ) {
     setBusy("identity");
     setIdentityOpen(true);
-    setNotice({ tone: "plain", text: "Checking the submitted verification transaction…" });
+    setNotice({ tone: "plain", text: "Checking verification…" });
     try {
       await waitForCredenceTransaction(attempt.transactionHash);
       await loadWallet(connected.address, true, connected);
@@ -592,7 +592,7 @@ export function CredenceApp() {
         rememberVerification(connected.address, attempt);
         setNotice({
           tone: "plain",
-          text: "The verification is still unconfirmed. Do not submit another transaction.",
+          text: "Verification pending.",
         });
       }
     } finally {
@@ -683,7 +683,7 @@ export function CredenceApp() {
       return;
     }
     if (transactionInFlight) {
-      setNotice({ tone: "plain", text: "Wait for your submitted transaction to finish." });
+      setNotice({ tone: "plain", text: "Transaction pending." });
       return;
     }
     if (!profile?.registered || !identity?.canPredict) {
@@ -707,7 +707,7 @@ export function CredenceApp() {
       busyKey: "predict",
       kind: "PREDICT",
       label: `Back ${selection} with ${stake} REP`,
-      pendingText: "GenLayer validators are checking the source…",
+      pendingText: "Checking market…",
       successText: `${stake} REP now backs ${selection}.`,
       execute: (onSubmitted) =>
         wallet.makePrediction(
@@ -728,14 +728,14 @@ export function CredenceApp() {
     if (pendingAction?.status === "PENDING") {
       setNotice({
         tone: "plain",
-        text: "Your previous transaction is still pending. No new transaction is needed.",
+        text: "Transaction pending.",
       });
       return;
     }
     if (verificationAttempt?.status === "PENDING") {
       setNotice({
         tone: "plain",
-        text: "Your previous verification is still pending. No new transaction is needed.",
+        text: "Verification pending.",
       });
       return;
     }
@@ -744,7 +744,7 @@ export function CredenceApp() {
       busyKey: "identity",
       kind: "X_CHALLENGE",
       label: identity?.bound ? "Create X recheck" : "Create X verification",
-      pendingText: "Creating a fresh verification challenge…",
+      pendingText: "Creating challenge…",
       successText: "Challenge ready. Post it exactly as shown.",
       execute: (onSubmitted) =>
         identity?.bound
@@ -757,15 +757,15 @@ export function CredenceApp() {
     event.preventDefault();
     if (!wallet || !challenge?.active) return;
     if (pendingAction?.status === "PENDING") {
-      setNotice({ tone: "plain", text: "Wait for your submitted transaction to finish." });
+      setNotice({ tone: "plain", text: "Transaction pending." });
       return;
     }
     if (verificationAttempt) {
       setNotice({
         tone: "plain",
         text: verificationAttempt.status === "PENDING"
-          ? "That verification is already submitted. Check its status instead."
-          : "Review the failed transaction and choose Try again before resubmitting.",
+          ? "Verification pending."
+          : "Clear the failed verification before retrying.",
       });
       return;
     }
@@ -785,7 +785,7 @@ export function CredenceApp() {
     const purpose = challenge.purpose === "REVERIFY" ? "REVERIFY" : "BIND";
     let submittedAttempt: VerificationAttempt | null = null;
     setBusy("identity");
-    setNotice({ tone: "plain", text: "Validators are verifying the X post…" });
+    setNotice({ tone: "plain", text: "Verifying post…" });
     try {
       const onSubmitted = (transactionHash: `0x${string}`) => {
         submittedAttempt = {
@@ -797,7 +797,7 @@ export function CredenceApp() {
         rememberVerification(wallet.address, submittedAttempt);
         setNotice({
           tone: "plain",
-          text: "Verification submitted. Do not send another transaction while validators check it.",
+          text: "Verification pending.",
         });
       };
       if (purpose === "REVERIFY") {
@@ -827,7 +827,7 @@ export function CredenceApp() {
         rememberVerification(wallet.address, submitted);
         setNotice({
           tone: "plain",
-          text: "The transaction was submitted but its result is not confirmed. Do not submit another one.",
+          text: "Verification pending.",
         });
       } else {
         setNotice({ tone: "bad", text: error instanceof Error ? error.message : "Verification failed." });
@@ -843,7 +843,7 @@ export function CredenceApp() {
       busyKey: position.marketId,
       kind: "RESOLVE",
       label: "Resolve market",
-      pendingText: "Validators are checking the final Polymarket result…",
+      pendingText: "Resolving market…",
       successText: "Market resolved. Settle your position.",
       execute: (onSubmitted) =>
         wallet.resolveMarket(position.marketId, onSubmitted),
@@ -856,7 +856,7 @@ export function CredenceApp() {
       busyKey: position.marketId,
       kind: "SETTLE",
       label: "Settle prediction",
-      pendingText: "Submitting settlement…",
+      pendingText: "Settling…",
       successText: "Your REP and Prediction Score are updated.",
       execute: (onSubmitted) =>
         wallet.settlePrediction(position.marketId, onSubmitted),
@@ -869,7 +869,7 @@ export function CredenceApp() {
       busyKey: position.marketId,
       kind: "VOID",
       label: "Void stale market",
-      pendingText: "Submitting the 30-day refund fallback…",
+      pendingText: "Voiding market…",
       successText: "Market voided. Settle to reclaim your REP.",
       execute: (onSubmitted) =>
         wallet.voidStaleMarket(position.marketId, onSubmitted),
@@ -961,9 +961,6 @@ export function CredenceApp() {
           <span className="brand-mark"><MarkIcon /></span>
           CREDENCE
         </button>
-        <div className={`network-pill ${wallet && !networkReady ? "network-pill-wrong" : ""}`}>
-          <span /> {wallet && !networkReady ? "Wrong network" : "Polymarket · Bradbury"}
-        </div>
         <div className="header-actions">
           {wallet && (
             <button className="quiet-button" onClick={() => setIdentityOpen(true)}>
@@ -996,8 +993,8 @@ export function CredenceApp() {
       {pendingAction && wallet && (
         <div className={`transaction-status transaction-status-${pendingAction.status.toLowerCase()}`} role="status">
           <div>
-            <strong>{pendingAction.status === "PENDING" ? `${pendingAction.label} submitted` : `${pendingAction.label} failed`}</strong>
-            <span>{pendingAction.status === "PENDING" ? "Validators are checking it." : pendingAction.error || "The state change was not applied."}</span>
+            <strong>{pendingAction.status === "PENDING" ? "Transaction pending" : `${pendingAction.label} failed`}</strong>
+            <span>{pendingAction.status === "PENDING" ? pendingAction.label : pendingAction.error || "Not applied."}</span>
           </div>
           <a href={verificationTransactionUrl(pendingAction.transactionHash)} target="_blank" rel="noreferrer">
             Explorer ↗
@@ -1265,11 +1262,11 @@ export function CredenceApp() {
                 <label className="field-label"><span>Post URL</span><input className="text-input" required disabled={Boolean(verificationAttempt) || pendingAction?.status === "PENDING" || !networkReady} value={proofUrl} onChange={(event) => setProofUrl(event.target.value)} placeholder="https://x.com/you/status/…" /></label>
                 {verificationAttempt ? (
                   <div className={`verification-status verification-status-${verificationAttempt.status.toLowerCase()}`} role="status">
-                    <strong>{verificationAttempt.status === "PENDING" ? "Verification submitted" : "Verification failed"}</strong>
+                    <strong>{verificationAttempt.status === "PENDING" ? "Verification pending" : "Verification failed"}</strong>
                     <p>
                       {verificationAttempt.status === "PENDING"
-                        ? "Validators are checking it. Do not send another transaction."
-                        : `${verificationAttempt.error || "No REP was awarded."} Check that the post is public, original, and contains the exact challenge.`}
+                        ? "Pending."
+                        : verificationAttempt.error || "Check the post and challenge text."}
                     </p>
                     <a href={verificationTransactionUrl(verificationAttempt.transactionHash)} target="_blank" rel="noreferrer">
                       View {shortAddress(verificationAttempt.transactionHash)} on Explorer ↗

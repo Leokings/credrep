@@ -5,6 +5,8 @@ The site sources active binary questions from Polymarket; users choose YES or
 NO and stake only their own non-transferable REP. There is no money, liquidity,
 counterparty, or payout pool in Credence.
 
+**Live MVP:** [credence-signal.vercel.app](https://credence-signal.vercel.app)
+
 - A verified X account starts with 100 REP.
 - Correct: return the stake plus an equal REP bonus.
 - Wrong: permanently burn the stake.
@@ -22,12 +24,14 @@ scores, and settlement.
 
 Hosted consensus-test evidence is recorded in
 [`docs/submission-evidence/studionet-2026-08-14.md`](docs/submission-evidence/studionet-2026-08-14.md).
+Bradbury identity and forecast receipts are recorded in
+[`docs/submission-evidence/bradbury-2026-08-14.md`](docs/submission-evidence/bradbury-2026-08-14.md).
 
 ## Bradbury
 
 - Chain ID: `4221`
-- Contract: `0x0d2527Fd9FFdC2fb648C55bb8dBf4Cb32452E51d`
-- Deployment transaction: `0x3956ffb5379a36339719da05619f8be558e01d0939c8290927754e3bb20aa3a3`
+- Contract: [`0x0d2527Fd9FFdC2fb648C55bb8dBf4Cb32452E51d`](https://explorer-bradbury.genlayer.com/address/0x0d2527Fd9FFdC2fb648C55bb8dBf4Cb32452E51d)
+- Deployment transaction: [`0x3956ffb…aa3a3`](https://explorer-bradbury.genlayer.com/transactions/0x3956ffb5379a36339719da05619f8be558e01d0939c8290927754e3bb20aa3a3)
 - Upgrade authority: `0x91B1b2D1f2De66400fcbeAEbadB8a5330eB28DC0`
 
 The deployer is a dedicated Credence wallet and is registered onchain as the
@@ -78,5 +82,12 @@ human-readable, short-lived challenge before the backend refreshes its public
 record. The signature cannot submit a transaction or spend REP. A signed,
 HTTP-only cookie permits silent refreshes for seven days; index and challenge
 writes are rate-limited by wallet and keyed network hash.
+
+## Wallet safety
+
+The frontend requests account access, adds or switches to Bradbury when needed,
+signs the human-readable public-index authorization above, and submits
+zero-value calls to the Credence contract. It has no token or NFT approval path,
+no asset-transfer path, and never asks for a seed phrase or private key.
 
 See `ARCHITECTURE.md` for the trust and settlement boundaries.

@@ -60,9 +60,9 @@ test("server-renders the Credence product", async () => {
   assert.match(html, /Live questions/);
   assert.match(html, /Community/);
   assert.match(html, /Prediction Score/);
-  assert.match(html, /Polymarket/);
   assert.match(html, /Bradbury/);
   assert.match(html, /Connect wallet/);
+  assert.doesNotMatch(html, /network-pill|Polymarket · Bradbury/);
   assert.doesNotMatch(
     html,
     /Manchester United|Maya Chen|Make your claim|People backing their word/,

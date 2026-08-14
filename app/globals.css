@@ -83,34 +83,6 @@ button { color: inherit; }
 
 .brand-mark svg { height: 22px; width: 22px; }
 
-.network-pill {
-  align-items: center;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: var(--muted);
-  display: flex;
-  font-family: var(--font-geist-mono), monospace;
-  font-size: 10px;
-  font-weight: 700;
-  gap: 7px;
-  padding: 8px 12px;
-  text-transform: uppercase;
-}
-
-.network-pill span {
-  background: #42b883;
-  border-radius: 50%;
-  box-shadow: 0 0 0 4px rgba(66, 184, 131, 0.12);
-  height: 6px;
-  width: 6px;
-}
-
-.network-pill-wrong { color: var(--red); }
-.network-pill-wrong span {
-  background: var(--red);
-  box-shadow: 0 0 0 4px rgba(182, 60, 50, 0.12);
-}
-
 .header-actions {
   align-items: center;
   display: flex;
@@ -782,7 +754,6 @@ footer a:hover { color: var(--ink); }
   .hero { gap: 36px; grid-template-columns: 1fr; }
   .hero-ledger { max-width: 700px; }
   .market-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .network-pill { display: none; }
   .topbar { grid-template-columns: 1fr auto; }
   .feed-tools { align-items: stretch; flex-direction: column; }
   .search-box { flex-basis: auto; width: 100%; }
