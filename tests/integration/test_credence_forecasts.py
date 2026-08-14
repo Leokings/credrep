@@ -44,10 +44,27 @@ def test_live_polymarket_question_reaches_genlayer_consensus():
     factory = get_contract_factory(contract_file_path="credence_claims.py")
     contract = factory.deploy(args=[100, 2_000], wait_retries=180)
 
+    print(f"EVIDENCE market_id={source_market['id']}")
+    print(f"EVIDENCE contract_address={contract.address}")
+
     receipt = contract.sync_market(
         args=[str(source_market["id"])]
     ).transact(wait_retries=240)
     assert tx_execution_succeeded(receipt)
+
+    transaction_id = next(
+        (
+            str(receipt[key])
+            for key in ("hash", "tx_id", "txId", "id")
+            if receipt.get(key)
+        ),
+        "not_exposed_by_gltest",
+    )
+    execution_result = receipt["consensus_data"]["leader_receipt"][0][
+        "execution_result"
+    ]
+    print(f"EVIDENCE sync_transaction={transaction_id}")
+    print(f"EVIDENCE sync_execution_result={execution_result}")
 
     stored = contract.get_market(args=[str(source_market["id"])]).call()
     assert stored["question"] == " ".join(source_market["question"].split())

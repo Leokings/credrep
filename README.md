@@ -20,6 +20,9 @@ fetch the selected Polymarket market before accepting a forecast and again when
 resolving it. The contract is authoritative for identity, REP, positions,
 scores, and settlement.
 
+Hosted consensus-test evidence is recorded in
+[`docs/submission-evidence/studionet-2026-08-14.md`](docs/submission-evidence/studionet-2026-08-14.md).
+
 ## Bradbury
 
 - Chain ID: `4221`
