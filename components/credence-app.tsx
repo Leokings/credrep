@@ -3,12 +3,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { MarketCategory, MarketFeed, SourcedMarket, Viewer } from "../lib/product-data";
 import {
+  CredenceTransactionExecutionError,
   connectCredenceWallet,
+  normalizeXProofUrl,
   readBindingChallenge,
   readChainIdentity,
   readChainProfile,
   readProtocolStats,
   readUserPositions,
+  waitForCredenceTransaction,
   type BindingChallenge,
   type ChainIdentity,
   type ChainPosition,
@@ -32,6 +35,12 @@ type Props = {
 
 type Notice = { tone: "good" | "bad" | "plain"; text: string };
 type View = "feed" | "record";
+type VerificationAttempt = {
+  transactionHash: `0x${string}`;
+  purpose: "BIND" | "REVERIFY";
+  status: "PENDING" | "FAILED";
+  error: string;
+};
 
 const CATEGORIES: Array<"All" | MarketCategory> = [
   "All",
@@ -45,6 +54,51 @@ const CATEGORIES: Array<"All" | MarketCategory> = [
   "World",
   "Other",
 ];
+
+function verificationStorageKey(address: string) {
+  return `credence:x-verification:${CREDENCE_CONTRACT_ADDRESS.toLowerCase()}:${address.toLowerCase()}`;
+}
+
+function readVerificationAttempt(address: string): VerificationAttempt | null {
+  try {
+    const stored = window.localStorage.getItem(verificationStorageKey(address));
+    if (!stored) return null;
+    const value = JSON.parse(stored) as Partial<VerificationAttempt>;
+    if (
+      typeof value.transactionHash !== "string" ||
+      !/^0x[0-9a-f]{64}$/i.test(value.transactionHash) ||
+      (value.purpose !== "BIND" && value.purpose !== "REVERIFY") ||
+      (value.status !== "PENDING" && value.status !== "FAILED")
+    ) {
+      return null;
+    }
+    return {
+      transactionHash: value.transactionHash as `0x${string}`,
+      purpose: value.purpose,
+      status: value.status,
+      error: typeof value.error === "string" ? value.error : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeVerificationAttempt(
+  address: string,
+  attempt: VerificationAttempt | null,
+) {
+  try {
+    const key = verificationStorageKey(address);
+    if (attempt) window.localStorage.setItem(key, JSON.stringify(attempt));
+    else window.localStorage.removeItem(key);
+  } catch {
+    // Device-local tracking is a convenience; chain state remains authoritative.
+  }
+}
+
+function verificationTransactionUrl(transactionHash: string) {
+  return `${BRADBURY_EXPLORER_URL}transactions/${transactionHash}`;
+}
 
 function formatDate(value: string | number) {
   const date = typeof value === "number" ? new Date(value * 1_000) : new Date(value);
@@ -132,6 +186,8 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
   const [stake, setStake] = useState(1);
   const [identityOpen, setIdentityOpen] = useState(false);
   const [proofUrl, setProofUrl] = useState("");
+  const [verificationAttempt, setVerificationAttempt] =
+    useState<VerificationAttempt | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -191,18 +247,87 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
     ? Math.floor(Date.parse(feed.fetchedAt) / 1_000)
     : 0;
 
+  function rememberVerification(
+    address: string,
+    attempt: VerificationAttempt | null,
+  ) {
+    setVerificationAttempt(attempt);
+    writeVerificationAttempt(address, attempt);
+  }
+
+  async function checkVerification(
+    connected: ConnectedCredenceWallet,
+    attempt: VerificationAttempt,
+  ) {
+    setBusy("identity");
+    setIdentityOpen(true);
+    setNotice({ tone: "plain", text: "Checking the submitted verification transaction…" });
+    try {
+      await waitForCredenceTransaction(attempt.transactionHash);
+      await loadWallet(connected.address);
+      rememberVerification(connected.address, null);
+      setProofUrl("");
+      setIdentityOpen(false);
+      setNotice({
+        tone: "good",
+        text: attempt.purpose === "REVERIFY"
+          ? "X account reverified."
+          : "X account bound. You have 100 REP.",
+      });
+    } catch (error) {
+      if (error instanceof CredenceTransactionExecutionError) {
+        const failedAttempt: VerificationAttempt = {
+          ...attempt,
+          status: "FAILED",
+          error: error.message,
+        };
+        rememberVerification(connected.address, failedAttempt);
+        setNotice({
+          tone: "bad",
+          text: "Verification failed on-chain. No REP was awarded.",
+        });
+      } else {
+        rememberVerification(connected.address, attempt);
+        setNotice({
+          tone: "plain",
+          text: "The verification is still unconfirmed. Do not submit another transaction.",
+        });
+      }
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function connectWallet() {
+    let connectedWallet: ConnectedCredenceWallet | null = null;
+    let pendingAttempt: VerificationAttempt | null = null;
     setBusy("connect");
     setNotice(null);
     try {
       const connected = await connectCredenceWallet();
+      connectedWallet = connected;
+      const storedAttempt = readVerificationAttempt(connected.address);
+      pendingAttempt = storedAttempt?.status === "PENDING" ? storedAttempt : null;
       setWallet(connected);
+      setVerificationAttempt(storedAttempt);
+      setProofUrl("");
+      if (storedAttempt) setIdentityOpen(true);
       await loadWallet(connected.address);
-      setNotice({ tone: "good", text: "Wallet connected." });
+      setNotice({
+        tone: storedAttempt ? "plain" : "good",
+        text: storedAttempt
+          ? storedAttempt.status === "PENDING"
+            ? "A submitted X verification is being checked."
+            : "Your last X verification failed. Review it before retrying."
+          : "Wallet connected.",
+      });
     } catch (error) {
       setNotice({ tone: "bad", text: error instanceof Error ? error.message : "Could not connect wallet." });
     } finally {
       setBusy("");
+    }
+    if (connectedWallet && pendingAttempt) {
+      void checkVerification(connectedWallet, pendingAttempt);
     }
   }
 
@@ -249,6 +374,14 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
 
   async function beginProof() {
     if (!wallet) return;
+    if (verificationAttempt?.status === "PENDING") {
+      setNotice({
+        tone: "plain",
+        text: "Your previous verification is still pending. No new transaction is needed.",
+      });
+      return;
+    }
+    rememberVerification(wallet.address, null);
     setBusy("identity");
     setNotice({ tone: "plain", text: "Creating a fresh verification challenge…" });
     try {
@@ -266,17 +399,77 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
   async function verifyProof(event: React.FormEvent) {
     event.preventDefault();
     if (!wallet || !challenge?.active) return;
+    if (verificationAttempt) {
+      setNotice({
+        tone: "plain",
+        text: verificationAttempt.status === "PENDING"
+          ? "That verification is already submitted. Check its status instead."
+          : "Review the failed transaction and choose Try again before resubmitting.",
+      });
+      return;
+    }
+
+    let canonicalProofUrl: string;
+    try {
+      canonicalProofUrl = normalizeXProofUrl(proofUrl);
+      setProofUrl(canonicalProofUrl);
+    } catch (error) {
+      setNotice({
+        tone: "bad",
+        text: error instanceof Error ? error.message : "Paste a valid X post URL.",
+      });
+      return;
+    }
+
+    const purpose = challenge.purpose === "REVERIFY" ? "REVERIFY" : "BIND";
+    let submittedAttempt: VerificationAttempt | null = null;
     setBusy("identity");
     setNotice({ tone: "plain", text: "Validators are verifying the X post…" });
     try {
-      if (challenge.purpose === "REVERIFY") await wallet.verifyXReverification(proofUrl.trim());
-      else await wallet.verifyXBinding(proofUrl.trim());
+      const onSubmitted = (transactionHash: `0x${string}`) => {
+        submittedAttempt = {
+          transactionHash,
+          purpose,
+          status: "PENDING",
+          error: "",
+        };
+        rememberVerification(wallet.address, submittedAttempt);
+        setNotice({
+          tone: "plain",
+          text: "Verification submitted. Do not send another transaction while validators check it.",
+        });
+      };
+      if (purpose === "REVERIFY") {
+        await wallet.verifyXReverification(canonicalProofUrl, onSubmitted);
+      } else {
+        await wallet.verifyXBinding(canonicalProofUrl, onSubmitted);
+      }
       await loadWallet(wallet.address);
+      rememberVerification(wallet.address, null);
       setProofUrl("");
       setIdentityOpen(false);
-      setNotice({ tone: "good", text: challenge.purpose === "REVERIFY" ? "X account reverified." : "X account bound. You have 100 REP." });
+      setNotice({ tone: "good", text: purpose === "REVERIFY" ? "X account reverified." : "X account bound. You have 100 REP." });
     } catch (error) {
-      setNotice({ tone: "bad", text: error instanceof Error ? error.message : "Verification failed." });
+      if (submittedAttempt && error instanceof CredenceTransactionExecutionError) {
+        const failedAttempt: VerificationAttempt = {
+          ...submittedAttempt,
+          status: "FAILED",
+          error: error.message,
+        };
+        rememberVerification(wallet.address, failedAttempt);
+        setNotice({
+          tone: "bad",
+          text: "Verification failed on-chain. No REP was awarded.",
+        });
+      } else if (submittedAttempt) {
+        rememberVerification(wallet.address, submittedAttempt);
+        setNotice({
+          tone: "plain",
+          text: "The transaction was submitted but its result is not confirmed. Do not submit another one.",
+        });
+      } else {
+        setNotice({ tone: "bad", text: error instanceof Error ? error.message : "Verification failed." });
+      }
     } finally {
       setBusy("");
     }
@@ -503,8 +696,40 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
                   <button type="button" onClick={() => navigator.clipboard.writeText(challenge.challenge)}>Copy</button>
                   <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(challenge.challenge)}`} target="_blank" rel="noreferrer">Post on X ↗</a>
                 </div>
-                <label className="field-label"><span>Post URL</span><input className="text-input" required value={proofUrl} onChange={(event) => setProofUrl(event.target.value)} placeholder="https://x.com/you/status/…" /></label>
-                <button className="primary-button" disabled={busy === "identity"} type="submit">{busy === "identity" ? "Verifying…" : challenge.purpose === "REVERIFY" ? "Reverify" : "Verify and receive 100 REP"}</button>
+                <label className="field-label"><span>Post URL</span><input className="text-input" required disabled={Boolean(verificationAttempt)} value={proofUrl} onChange={(event) => setProofUrl(event.target.value)} placeholder="https://x.com/you/status/…" /></label>
+                {verificationAttempt ? (
+                  <div className={`verification-status verification-status-${verificationAttempt.status.toLowerCase()}`} role="status">
+                    <strong>{verificationAttempt.status === "PENDING" ? "Verification submitted" : "Verification failed"}</strong>
+                    <p>
+                      {verificationAttempt.status === "PENDING"
+                        ? "Validators are checking it. Do not send another transaction."
+                        : `${verificationAttempt.error || "No REP was awarded."} Check that the post is public, original, and contains the exact challenge.`}
+                    </p>
+                    <a href={verificationTransactionUrl(verificationAttempt.transactionHash)} target="_blank" rel="noreferrer">
+                      View {shortAddress(verificationAttempt.transactionHash)} on Explorer ↗
+                    </a>
+                    <button
+                      type="button"
+                      disabled={busy === "identity"}
+                      onClick={() => {
+                        if (verificationAttempt.status === "PENDING") {
+                          void checkVerification(wallet, verificationAttempt);
+                        } else {
+                          rememberVerification(wallet.address, null);
+                          setNotice(null);
+                        }
+                      }}
+                    >
+                      {busy === "identity"
+                        ? "Checking…"
+                        : verificationAttempt.status === "PENDING"
+                          ? "Check status"
+                          : "Try again"}
+                    </button>
+                  </div>
+                ) : (
+                  <button className="primary-button" disabled={busy === "identity"} type="submit">{busy === "identity" ? "Verifying…" : challenge.purpose === "REVERIFY" ? "Reverify" : "Verify and receive 100 REP"}</button>
+                )}
               </form>
             ) : (
               <div className="identity-start">

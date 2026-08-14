@@ -21,8 +21,8 @@ scores, and settlement.
 ## Bradbury
 
 - Chain ID: `4221`
-- Contract: `0x2d93e493144A0e0f1dc6E4803e15c21EAb219072`
-- Deployment transaction: `0x09214ecfd8e0e19135a55d8cfd477361196ebec7acbe76e1a11f877e1befa36f`
+- Contract: `0xc50bFcE3729182fE251BeAE0b759C8Fc1b8f649e`
+- Deployment transaction: `0xab5db18406683d8449f05a8b7a115a8c54dc6c607a7eaf87d2938a1bc0246564`
 
 The deployer is a dedicated Credence wallet. Product users connect and sign
 with their own wallets; the site never receives the deployer key.

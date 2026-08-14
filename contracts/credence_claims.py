@@ -89,8 +89,11 @@ def _normalize_x_proof_url(raw: str) -> tuple[str, str, str]:
     value = raw.strip()
     if len(value) < 20 or len(value) > 300 or not value.startswith("https://"):
         _expected("invalid_x_proof_url")
-    if "?" in value or "#" in value:
-        _expected("invalid_x_proof_url")
+
+    # X appends harmless share parameters such as `?s=20` to copied post URLs.
+    # They are not part of the proof identity, so remove them before validating
+    # and fetching the canonical post URL.
+    value = value.split("#", 1)[0].split("?", 1)[0]
 
     path = value[8:].strip("/")
     parts = path.split("/")

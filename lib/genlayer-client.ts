@@ -100,9 +100,15 @@ export type ChainPosition = {
 export type ConnectedCredenceWallet = {
   address: `0x${string}`;
   beginXBinding(): Promise<`0x${string}`>;
-  verifyXBinding(proofUrl: string): Promise<`0x${string}`>;
+  verifyXBinding(
+    proofUrl: string,
+    onSubmitted?: (transactionHash: `0x${string}`) => void,
+  ): Promise<`0x${string}`>;
   beginXReverification(): Promise<`0x${string}`>;
-  verifyXReverification(proofUrl: string): Promise<`0x${string}`>;
+  verifyXReverification(
+    proofUrl: string,
+    onSubmitted?: (transactionHash: `0x${string}`) => void,
+  ): Promise<`0x${string}`>;
   startRecovery(): Promise<`0x${string}`>;
   claimRecovery(): Promise<`0x${string}`>;
   makePrediction(input: {
@@ -116,6 +122,47 @@ export type ConnectedCredenceWallet = {
 };
 
 const readClient = createClient({ chain: testnetBradbury });
+
+export class CredenceTransactionExecutionError extends Error {
+  readonly transactionHash: `0x${string}`;
+
+  constructor(transactionHash: `0x${string}`) {
+    super("Accepted with an execution error. No REP was awarded.");
+    this.name = "CredenceTransactionExecutionError";
+    this.transactionHash = transactionHash;
+  }
+}
+
+export function normalizeXProofUrl(raw: string): string {
+  const value = raw.trim();
+  if (value.length < 20 || value.length > 300) {
+    throw new Error("Paste the full URL of your public X post.");
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("Paste a valid X post URL.");
+  }
+
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+  if (parsed.protocol !== "https:" || (host !== "x.com" && host !== "twitter.com")) {
+    throw new Error("The proof must be a post URL from x.com or twitter.com.");
+  }
+
+  const parts = parsed.pathname.split("/").filter(Boolean);
+  if (
+    parts.length !== 3 ||
+    !/^[A-Za-z0-9_]{1,15}$/.test(parts[0]) ||
+    parts[1].toLowerCase() !== "status" ||
+    !/^\d{5,32}$/.test(parts[2])
+  ) {
+    throw new Error("Paste the URL of the X post, not a profile or feed URL.");
+  }
+
+  return `https://x.com/${parts[0]}/status/${parts[2]}`;
+}
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -148,24 +195,28 @@ function toCalldataAddress(address: string) {
   );
 }
 
-function assertSuccessfulExecution(receipt: { txExecutionResultName?: string }) {
+function assertSuccessfulExecution(
+  receipt: { txExecutionResultName?: string },
+  transactionHash: `0x${string}`,
+) {
   if (receipt.txExecutionResultName !== ExecutionResult.FINISHED_WITH_RETURN) {
-    throw new Error(
-      receipt.txExecutionResultName === ExecutionResult.FINISHED_WITH_ERROR
-        ? "The contract rejected this transaction. No reputation changed."
-        : "Validator consensus did not finish successfully.",
-    );
+    if (receipt.txExecutionResultName === ExecutionResult.FINISHED_WITH_ERROR) {
+      throw new CredenceTransactionExecutionError(transactionHash);
+    }
+    throw new Error("Validator consensus did not finish successfully.");
   }
 }
 
-async function waitForAccepted(transactionHash: `0x${string}`) {
+export async function waitForCredenceTransaction(
+  transactionHash: `0x${string}`,
+) {
   const receipt = await readClient.waitForTransactionReceipt({
     hash: transactionHash,
     status: TransactionStatus.ACCEPTED,
     interval: 1_500,
     retries: 160,
   });
-  assertSuccessfulExecution(receipt);
+  assertSuccessfulExecution(receipt, transactionHash);
 }
 
 export async function readChainProfile(address: string): Promise<ChainProfile> {
@@ -344,6 +395,7 @@ export async function connectCredenceWallet(): Promise<ConnectedCredenceWallet> 
   async function write(
     functionName: string,
     args: unknown[] = [],
+    onSubmitted?: (transactionHash: `0x${string}`) => void,
   ): Promise<`0x${string}`> {
     const transactionHash = (await writeClient.writeContract({
       address: CREDENCE_CONTRACT_ADDRESS,
@@ -351,17 +403,19 @@ export async function connectCredenceWallet(): Promise<ConnectedCredenceWallet> 
       args,
       value: 0n,
     })) as `0x${string}`;
-    await waitForAccepted(transactionHash);
+    onSubmitted?.(transactionHash);
+    await waitForCredenceTransaction(transactionHash);
     return transactionHash;
   }
 
   return {
     address,
     beginXBinding: () => write("begin_x_binding"),
-    verifyXBinding: (proofUrl) => write("verify_x_binding", [proofUrl]),
+    verifyXBinding: (proofUrl, onSubmitted) =>
+      write("verify_x_binding", [proofUrl], onSubmitted),
     beginXReverification: () => write("begin_x_reverification"),
-    verifyXReverification: (proofUrl) =>
-      write("verify_x_reverification", [proofUrl]),
+    verifyXReverification: (proofUrl, onSubmitted) =>
+      write("verify_x_reverification", [proofUrl], onSubmitted),
     startRecovery: () => write("start_recovery"),
     claimRecovery: () => write("claim_recovery"),
     makePrediction: ({ marketId, prediction, confidenceBps, stake }) =>

@@ -189,6 +189,36 @@ def test_x_proof_activates_wallet_with_one_hundred_reputation(
     assert identity["can_predict"] is True
 
 
+def test_x_share_url_suffix_is_removed_before_verification(
+    credence, direct_vm, direct_alice
+):
+    challenge = begin_binding(credence, direct_vm, direct_alice)
+    tweet_id = "2088249671122567454"
+    direct_vm.mock_web(
+        rf".*status/{tweet_id}.*",
+        {
+            "status": 200,
+            "body": x_post_html(
+                tweet_id,
+                challenge,
+                "1234567890123456789",
+                "credence_user",
+            ),
+        },
+    )
+
+    direct_vm.sender = direct_alice
+    credence.verify_x_binding(
+        f"https://x.com/credence_user/status/{tweet_id}?s=20#share"
+    )
+
+    identity = credence.get_identity_status(direct_alice)
+    assert identity["proof_url"] == (
+        f"https://x.com/credence_user/status/{tweet_id}"
+    )
+    assert identity["status"] == "VERIFIED"
+
+
 def test_x_account_and_wallet_are_permanently_one_to_one(
     credence, direct_vm, direct_alice, direct_bob
 ):
