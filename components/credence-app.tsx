@@ -184,8 +184,11 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
     );
   }, [category, feed, query]);
 
-  const maximumStake = profile?.registered
+  const maximumStake = profile?.registered && profile.availableReputation > 0
     ? Math.max(1, Math.floor((profile.availableReputation * (protocol?.maxStakeBps ?? 2_000)) / 10_000))
+    : 0;
+  const feedTimeUnix = feed
+    ? Math.floor(Date.parse(feed.fetchedAt) / 1_000)
     : 0;
 
   async function connectWallet() {
@@ -434,7 +437,7 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
                 ) : (
                   <div className="position-list">
                     {positions.map((position) => {
-                      const canResolve = position.status === "OPEN" && position.market.status === "OPEN";
+                      const canResolve = position.status === "OPEN" && position.market.status === "OPEN" && feedTimeUnix >= position.market.endTimeUnix;
                       const canSettle = position.status === "OPEN" && position.market.status !== "OPEN";
                       return (
                         <article className="position-card" key={position.marketId}>
