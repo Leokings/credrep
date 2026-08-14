@@ -5,129 +5,7 @@ import {
   primaryKey,
   sqliteTable,
   text,
-  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
-
-export const profiles = sqliteTable(
-  "profiles",
-  {
-    userId: text("user_id").primaryKey(),
-    displayName: text("display_name").notNull(),
-    handle: text("handle").notNull(),
-    credits: integer("credits").notNull().default(100),
-    atRisk: integer("at_risk").notNull().default(0),
-    totalClaims: integer("total_claims").notNull().default(0),
-    resolvedClaims: integer("resolved_claims").notNull().default(0),
-    correctClaims: integer("correct_claims").notNull().default(0),
-    overallRating: integer("overall_rating").notNull().default(500),
-    totalForecasts: integer("total_forecasts").notNull().default(0),
-    resolvedForecasts: integer("resolved_forecasts").notNull().default(0),
-    correctForecasts: integer("correct_forecasts").notNull().default(0),
-    brierTotal: integer("brier_total").notNull().default(0),
-    joinedAt: text("joined_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-  },
-  (table) => [
-    uniqueIndex("idx_profiles_handle").on(table.handle),
-    index("idx_profiles_rating").on(table.overallRating),
-  ],
-);
-
-export const claims = sqliteTable(
-  "claims",
-  {
-    id: text("id").primaryKey(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => profiles.userId),
-    statement: text("statement").notNull(),
-    category: text("category").notNull(),
-    status: text("status").notNull().default("OPEN"),
-    stake: integer("stake").notNull(),
-    resolutionAt: text("resolution_at").notNull(),
-    sourceLabel: text("source_label").notNull(),
-    sourceUrl: text("source_url").notNull(),
-    rules: text("rules").notNull(),
-    outcome: text("outcome"),
-    payout: integer("payout").notNull().default(0),
-    contractClaimId: text("contract_claim_id"),
-    transactionHash: text("transaction_hash"),
-    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-    resolvedAt: text("resolved_at"),
-  },
-  (table) => [
-    index("idx_claims_status_resolution").on(table.status, table.resolutionAt),
-    index("idx_claims_category_status").on(table.category, table.status),
-    index("idx_claims_user_created").on(table.userId, table.createdAt),
-  ],
-);
-
-export const markets = sqliteTable(
-  "markets",
-  {
-    id: text("id").primaryKey(),
-    eyebrow: text("eyebrow").notNull(),
-    question: text("question").notNull(),
-    category: text("category").notNull(),
-    status: text("status").notNull().default("OPEN"),
-    lockAt: text("lock_at").notNull(),
-    resolutionAt: text("resolution_at").notNull(),
-    sourceLabel: text("source_label").notNull(),
-    rules: text("rules").notNull(),
-    yesProbabilityBps: integer("yes_probability_bps").notNull(),
-    volume: integer("volume").notNull().default(0),
-    forecasters: integer("forecasters").notNull().default(0),
-    signal: text("signal").notNull().default("Steady"),
-    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-  },
-  (table) => [
-    index("idx_markets_status_lock").on(table.status, table.lockAt),
-    index("idx_markets_category_status").on(table.category, table.status),
-  ],
-);
-
-export const forecasts = sqliteTable(
-  "forecasts",
-  {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    marketId: text("market_id")
-      .notNull()
-      .references(() => markets.id),
-    userId: text("user_id")
-      .notNull()
-      .references(() => profiles.userId),
-    outcome: text("outcome").notNull(),
-    confidenceBps: integer("confidence_bps").notNull(),
-    yesProbabilityBps: integer("yes_probability_bps").notNull(),
-    stake: integer("stake").notNull(),
-    status: text("status").notNull().default("OPEN"),
-    resolutionTx: text("resolution_tx"),
-    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-  },
-  (table) => [
-    uniqueIndex("idx_forecasts_user_market").on(table.userId, table.marketId),
-    index("idx_forecasts_market_status").on(table.marketId, table.status),
-    index("idx_forecasts_user_created").on(table.userId, table.createdAt),
-  ],
-);
-
-export const topicRatings = sqliteTable(
-  "topic_ratings",
-  {
-    userId: text("user_id")
-      .notNull()
-      .references(() => profiles.userId),
-    category: text("category").notNull(),
-    rating: integer("rating").notNull().default(500),
-    resolvedCount: integer("resolved_count").notNull().default(0),
-    correctCount: integer("correct_count").notNull().default(0),
-    brierTotal: integer("brier_total").notNull().default(0),
-  },
-  (table) => [
-    primaryKey({ columns: [table.userId, table.category] }),
-    index("idx_topic_ratings_category_rating").on(table.category, table.rating),
-  ],
-);
 
 export const sourcedMarkets = sqliteTable(
   "sourced_markets",
@@ -147,5 +25,100 @@ export const sourcedMarkets = sqliteTable(
   (table) => [
     index("idx_sourced_markets_status_end").on(table.status, table.endAt),
     index("idx_sourced_markets_volume").on(table.volume24hr),
+  ],
+);
+
+export const chainProfiles = sqliteTable(
+  "chain_profiles",
+  {
+    contractAddress: text("contract_address").notNull(),
+    walletAddress: text("wallet_address").notNull(),
+    xHandle: text("x_handle").notNull(),
+    identityStatus: text("identity_status").notNull(),
+    xVerifiedUntil: integer("x_verified_until").notNull(),
+    reputation: integer("reputation").notNull(),
+    availableReputation: integer("available_reputation").notNull(),
+    reputationAtRisk: integer("reputation_at_risk").notNull(),
+    predictionsMade: integer("predictions_made").notNull(),
+    openPredictions: integer("open_predictions").notNull(),
+    resolvedPredictions: integer("resolved_predictions").notNull(),
+    correctPredictions: integer("correct_predictions").notNull(),
+    voidPredictions: integer("void_predictions").notNull(),
+    accuracyBps: integer("accuracy_bps").notNull(),
+    predictionScoreBps: integer("prediction_score_bps").notNull(),
+    indexedAt: text("indexed_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.contractAddress, table.walletAddress] }),
+    index("idx_chain_profiles_score").on(
+      table.contractAddress,
+      table.predictionScoreBps,
+    ),
+    index("idx_chain_profiles_predictions").on(
+      table.contractAddress,
+      table.predictionsMade,
+    ),
+  ],
+);
+
+export const chainMarkets = sqliteTable(
+  "chain_markets",
+  {
+    contractAddress: text("contract_address").notNull(),
+    marketId: text("market_id").notNull(),
+    question: text("question").notNull(),
+    description: text("description").notNull(),
+    slug: text("slug").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    endTimeUnix: integer("end_time_unix").notNull(),
+    status: text("status").notNull(),
+    outcome: text("outcome").notNull(),
+    predictionCount: integer("prediction_count").notNull(),
+    totalReputationStaked: integer("total_reputation_staked").notNull(),
+    indexedAt: text("indexed_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.contractAddress, table.marketId] }),
+    index("idx_chain_markets_status_end").on(
+      table.contractAddress,
+      table.status,
+      table.endTimeUnix,
+    ),
+  ],
+);
+
+export const chainPositions = sqliteTable(
+  "chain_positions",
+  {
+    contractAddress: text("contract_address").notNull(),
+    walletAddress: text("wallet_address").notNull(),
+    marketId: text("market_id").notNull(),
+    prediction: text("prediction").notNull(),
+    confidenceBps: integer("confidence_bps").notNull(),
+    stake: integer("stake").notNull(),
+    status: text("status").notNull(),
+    scoreBps: integer("score_bps").notNull(),
+    createdAt: text("created_at").notNull(),
+    settledAt: text("settled_at").notNull(),
+    indexedAt: text("indexed_at").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.contractAddress, table.walletAddress, table.marketId],
+    }),
+    index("idx_chain_positions_activity").on(
+      table.contractAddress,
+      table.createdAt,
+    ),
+    index("idx_chain_positions_wallet").on(
+      table.contractAddress,
+      table.walletAddress,
+      table.createdAt,
+    ),
+    index("idx_chain_positions_market").on(
+      table.contractAddress,
+      table.marketId,
+      table.status,
+    ),
   ],
 );

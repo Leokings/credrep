@@ -24,6 +24,7 @@ test("server-renders the Credence product", async () => {
   assert.match(html, /<title>Credence/);
   assert.match(html, /Forecast with reputation/);
   assert.match(html, /Live questions/);
+  assert.match(html, /Community/);
   assert.match(html, /Prediction Score/);
   assert.match(html, /Polymarket/);
   assert.match(html, /Bradbury/);

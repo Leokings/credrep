@@ -334,10 +334,12 @@ export async function readUserPositions(
   count: number,
 ): Promise<ChainPosition[]> {
   if (!count) return [];
+  const positionCount = Math.min(count, 100);
+  const positionOffset = Math.max(0, count - positionCount);
   const rawIds = await readClient.readContract({
     address: CREDENCE_CONTRACT_ADDRESS,
     functionName: "get_user_position_ids",
-    args: [toCalldataAddress(address), 0n, BigInt(Math.min(count, 100))],
+    args: [toCalldataAddress(address), BigInt(positionOffset), BigInt(positionCount)],
   });
   if (!Array.isArray(rawIds)) throw new Error("Bradbury returned an invalid position index.");
 

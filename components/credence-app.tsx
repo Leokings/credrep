@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { CommunityFeed } from "../lib/community-data";
 import type { MarketCategory, MarketFeed, SourcedMarket, Viewer } from "../lib/product-data";
 import {
   CredenceTransactionExecutionError,
@@ -34,7 +35,7 @@ type Props = {
 };
 
 type Notice = { tone: "good" | "bad" | "plain"; text: string };
-type View = "feed" | "record";
+type View = "feed" | "record" | "community";
 type VerificationAttempt = {
   transactionHash: `0x${string}`;
   purpose: "BIND" | "REVERIFY";
@@ -116,6 +117,15 @@ function percent(bps: number, empty = "—") {
   return bps ? `${(bps / 100).toFixed(bps % 100 ? 1 : 0)}%` : empty;
 }
 
+async function fetchCommunityFeed(): Promise<CommunityFeed> {
+  const response = await fetch("/api/community", {
+    headers: { accept: "application/json" },
+  });
+  const body = (await response.json()) as CommunityFeed & { error?: string };
+  if (!response.ok) throw new Error(body.error || "Community feed unavailable.");
+  return body;
+}
+
 function statusLabel(status: string) {
   if (status === "WON") return "Correct";
   if (status === "LOST") return "Wrong";
@@ -169,6 +179,8 @@ function Metric({ label, value }: { label: string; value: string | number }) {
 export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
   const [feed, setFeed] = useState<MarketFeed | null>(null);
   const [feedError, setFeedError] = useState("");
+  const [community, setCommunity] = useState<CommunityFeed | null>(null);
+  const [communityError, setCommunityError] = useState("");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("All");
   const [view, setView] = useState<View>("feed");
@@ -189,6 +201,55 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
   const [verificationAttempt, setVerificationAttempt] =
     useState<VerificationAttempt | null>(null);
 
+  const loadCommunity = useCallback(async () => {
+    try {
+      const body = await fetchCommunityFeed();
+      setCommunity(body);
+      setCommunityError("");
+    } catch (error) {
+      setCommunityError(
+        error instanceof Error ? error.message : "Community feed unavailable.",
+      );
+    }
+  }, []);
+
+  const syncWalletIndex = useCallback(async (address: string) => {
+    if (!signedIn) return;
+    try {
+      const response = await fetch("/api/index", {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ address }),
+      });
+      const body = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(body.error || "Wallet sync failed.");
+      await loadCommunity();
+    } catch (error) {
+      setCommunityError(
+        error instanceof Error ? error.message : "Wallet sync failed.",
+      );
+    }
+  }, [loadCommunity, signedIn]);
+
+  const loadWallet = useCallback(async (address: string) => {
+    const [nextProfile, nextIdentity, nextChallenge] = await Promise.all([
+      readChainProfile(address),
+      readChainIdentity(address),
+      readBindingChallenge(address),
+    ]);
+    const nextPositions = nextProfile.predictionsMade
+      ? await readUserPositions(address, nextProfile.predictionsMade)
+      : [];
+    setProfile(nextProfile);
+    setIdentity(nextIdentity);
+    setChallenge(nextChallenge);
+    setPositions(nextPositions);
+    if (nextProfile.registered) void syncWalletIndex(address);
+  }, [syncWalletIndex]);
+
   useEffect(() => {
     const controller = new AbortController();
     fetch("/api/markets", {
@@ -206,22 +267,17 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
         setFeedError(error instanceof Error ? error.message : "Market feed unavailable.");
       });
     readProtocolStats().then(setProtocol).catch(() => setProtocol(null));
+    fetchCommunityFeed()
+      .then((body) => {
+        setCommunity(body);
+        setCommunityError("");
+      })
+      .catch((error: unknown) => {
+        setCommunityError(
+          error instanceof Error ? error.message : "Community feed unavailable.",
+        );
+      });
     return () => controller.abort();
-  }, []);
-
-  const loadWallet = useCallback(async (address: string) => {
-    const [nextProfile, nextIdentity, nextChallenge] = await Promise.all([
-      readChainProfile(address),
-      readChainIdentity(address),
-      readBindingChallenge(address),
-    ]);
-    const nextPositions = nextProfile.predictionsMade
-      ? await readUserPositions(address, nextProfile.predictionsMade)
-      : [];
-    setProfile(nextProfile);
-    setIdentity(nextIdentity);
-    setChallenge(nextChallenge);
-    setPositions(nextPositions);
   }, []);
 
   const positionByMarket = useMemo(
@@ -568,6 +624,7 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
         <nav className="view-tabs" aria-label="Credence views">
           <button className={view === "feed" ? "active" : ""} onClick={() => setView("feed")}>Live questions</button>
           <button className={view === "record" ? "active" : ""} onClick={() => setView("record")}>My record {positions.length ? `(${positions.length})` : ""}</button>
+          <button className={view === "community" ? "active" : ""} onClick={() => setView("community")}>Community</button>
         </nav>
 
         {view === "feed" ? (
@@ -599,7 +656,7 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
               </p>
             )}
           </section>
-        ) : (
+        ) : view === "record" ? (
           <section className="record-section">
             {!wallet && <div className="empty-state"><h2>Connect your wallet</h2><p>Your onchain prediction record will appear here.</p><button onClick={connectWallet}>Connect wallet</button></div>}
             {wallet && !profile?.registered && <div className="empty-state"><h2>Verify one X account</h2><p>This creates your non-transferable 100 REP identity.</p><button onClick={() => setIdentityOpen(true)}>Verify X</button></div>}
@@ -652,6 +709,97 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
                 )}
               </>
             )}
+          </section>
+        ) : (
+          <section className="community-section">
+            <div className="community-header">
+              <div>
+                <p className="eyebrow">BRADBURY READ MODEL</p>
+                <h2>Verified community record</h2>
+                <p>Only contract-confirmed REP, scores, and positions appear here.</p>
+              </div>
+              <button onClick={() => void loadCommunity()}>Refresh</button>
+            </div>
+
+            {communityError && (
+              <div className="community-message error-state">{communityError}</div>
+            )}
+            {!community && !communityError && (
+              <div className="empty-state">Loading community record…</div>
+            )}
+            {community && !community.leaderboard.length && (
+              <div className="empty-state">
+                <h2>No indexed records yet</h2>
+                <p>Connect a verified wallet to add its public Bradbury record.</p>
+              </div>
+            )}
+            {community && community.leaderboard.length > 0 && (
+              <div className="community-grid">
+                <div className="community-panel leaderboard-panel">
+                  <div className="panel-title">
+                    <h3>Prediction score</h3>
+                    <span>{community.indexedProfiles} verified</span>
+                  </div>
+                  <div className="leaderboard-scroll">
+                    <table className="leaderboard-table">
+                      <thead>
+                        <tr>
+                          <th>Rank</th>
+                          <th>Forecaster</th>
+                          <th>Score</th>
+                          <th>Accuracy</th>
+                          <th>Resolved</th>
+                          <th>REP</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {community.leaderboard.map((entry) => (
+                          <tr key={entry.walletAddress}>
+                            <td>#{entry.rank}</td>
+                            <td>
+                              <strong>{entry.xHandle ? `@${entry.xHandle}` : shortAddress(entry.walletAddress)}</strong>
+                              {entry.xHandle && <small>{shortAddress(entry.walletAddress)}</small>}
+                            </td>
+                            <td>{entry.resolvedPredictions ? percent(entry.predictionScoreBps) : "—"}</td>
+                            <td>{entry.resolvedPredictions ? percent(entry.accuracyBps) : "—"}</td>
+                            <td>{entry.resolvedPredictions}</td>
+                            <td>{entry.reputation}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="community-panel activity-panel">
+                  <div className="panel-title">
+                    <h3>Recent backing</h3>
+                    <span>Onchain</span>
+                  </div>
+                  {!community.activity.length ? (
+                    <p className="activity-empty">No positions indexed yet.</p>
+                  ) : (
+                    <div className="activity-list">
+                      {community.activity.map((item) => (
+                        <article key={`${item.walletAddress}:${item.marketId}`}>
+                          <div className="activity-top">
+                            <strong>{item.xHandle ? `@${item.xHandle}` : shortAddress(item.walletAddress)}</strong>
+                            <span className={`status status-${item.status.toLowerCase()}`}>{statusLabel(item.status)}</span>
+                          </div>
+                          <a href={item.sourceUrl} target="_blank" rel="noreferrer">{item.question}</a>
+                          <p><strong>{item.prediction}</strong> · {Math.round(item.confidenceBps / 100)}% · {item.stake} REP</p>
+                          <time>{formatDate(item.createdAt)}</time>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <p className="community-footnote">
+              GenLayer is the source of truth. This database is a refreshed public index.
+            </p>
           </section>
         )}
       </main>
