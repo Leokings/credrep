@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CommunityFeed } from "../lib/community-data";
-import type { MarketCategory, MarketFeed, SourcedMarket, Viewer } from "../lib/product-data";
+import type { MarketCategory, MarketFeed, SourcedMarket } from "../lib/product-data";
 import {
   CredenceTransactionExecutionError,
   connectCredenceWallet,
@@ -30,12 +30,6 @@ import {
   shortAddress,
 } from "../lib/deployment";
 import { ClockIcon, CloseIcon, MarkIcon, SearchIcon, ShieldIcon } from "./icons";
-
-type Props = {
-  viewer: Viewer;
-  signedIn: boolean;
-  signInPath: string;
-};
 
 type Notice = { tone: "good" | "bad" | "plain"; text: string };
 type View = "feed" | "record" | "community";
@@ -251,7 +245,7 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
+export function CredenceApp() {
   const [feed, setFeed] = useState<MarketFeed | null>(null);
   const [feedError, setFeedError] = useState("");
   const [community, setCommunity] = useState<CommunityFeed | null>(null);
@@ -290,10 +284,13 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
     }
   }, []);
 
-  const syncWalletIndex = useCallback(async (address: string) => {
-    if (!signedIn) return;
+  const syncWalletIndex = useCallback(async (
+    address: string,
+    connected?: ConnectedCredenceWallet,
+    authorize = false,
+  ) => {
     try {
-      const response = await fetch("/api/index", {
+      let response = await fetch("/api/index", {
         method: "POST",
         headers: {
           accept: "application/json",
@@ -301,7 +298,49 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
         },
         body: JSON.stringify({ address }),
       });
-      const body = (await response.json()) as { error?: string };
+
+      let body = (await response.json()) as {
+        error?: string;
+        code?: string;
+      };
+      if (
+        response.status === 401 &&
+        body.code === "WALLET_SIGNATURE_REQUIRED"
+      ) {
+        if (!authorize || !connected) return;
+        const challengeResponse = await fetch("/api/index/challenge", {
+          method: "POST",
+          headers: {
+            accept: "application/json",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ address }),
+        });
+        const challenge = (await challengeResponse.json()) as {
+          error?: string;
+          nonce?: string;
+          message?: string;
+        };
+        if (!challengeResponse.ok || !challenge.nonce || !challenge.message) {
+          throw new Error(challenge.error || "Wallet authorization failed.");
+        }
+        const signature = await connected.signIndexAuthorization(
+          challenge.message,
+        );
+        response = await fetch("/api/index", {
+          method: "POST",
+          headers: {
+            accept: "application/json",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            address,
+            nonce: challenge.nonce,
+            signature,
+          }),
+        });
+        body = (await response.json()) as { error?: string; code?: string };
+      }
       if (!response.ok) throw new Error(body.error || "Wallet sync failed.");
       await loadCommunity();
     } catch (error) {
@@ -309,9 +348,13 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
         error instanceof Error ? error.message : "Wallet sync failed.",
       );
     }
-  }, [loadCommunity, signedIn]);
+  }, [loadCommunity]);
 
-  const loadWallet = useCallback(async (address: string) => {
+  const loadWallet = useCallback(async (
+    address: string,
+    authorizeIndex = false,
+    connectedWallet?: ConnectedCredenceWallet,
+  ) => {
     const [nextProfile, nextIdentity, nextChallenge] = await Promise.all([
       readChainProfile(address),
       readChainIdentity(address),
@@ -324,7 +367,9 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
     setIdentity(nextIdentity);
     setChallenge(nextChallenge);
     setPositions(nextPositions);
-    if (nextProfile.registered) void syncWalletIndex(address);
+    if (nextProfile.registered && connectedWallet) {
+      void syncWalletIndex(address, connectedWallet, authorizeIndex);
+    }
   }, [syncWalletIndex]);
 
   useEffect(() => {
@@ -419,7 +464,7 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
     setNotice({ tone: "plain", text: `Checking ${action.label.toLowerCase()}…` });
     try {
       await waitForCredenceTransaction(action.transactionHash);
-      await loadWallet(connected.address);
+      await loadWallet(connected.address, true, connected);
       rememberPendingAction(connected.address, null);
       setNotice({ tone: "good", text: `${action.label} confirmed.` });
     } catch (error) {
@@ -482,7 +527,7 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
           text: "Transaction submitted. Do not send another one while validators check it.",
         });
       });
-      await loadWallet(wallet.address);
+      await loadWallet(wallet.address, false, wallet);
       rememberPendingAction(wallet.address, null);
       options.afterSuccess?.();
       setNotice({ tone: "good", text: options.successText });
@@ -521,7 +566,7 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
     setNotice({ tone: "plain", text: "Checking the submitted verification transaction…" });
     try {
       await waitForCredenceTransaction(attempt.transactionHash);
-      await loadWallet(connected.address);
+      await loadWallet(connected.address, true, connected);
       rememberVerification(connected.address, null);
       setProofUrl("");
       setIdentityOpen(false);
@@ -573,7 +618,7 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
       setPendingAction(storedAction);
       setProofUrl("");
       if (storedAttempt) setIdentityOpen(true);
-      await loadWallet(connected.address);
+      await loadWallet(connected.address, true, connected);
       setNotice({
         tone: storedAttempt || storedAction ? "plain" : "good",
         text: storedAttempt
@@ -760,15 +805,16 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
       } else {
         await wallet.verifyXBinding(canonicalProofUrl, onSubmitted);
       }
-      await loadWallet(wallet.address);
+      await loadWallet(wallet.address, true, wallet);
       rememberVerification(wallet.address, null);
       setProofUrl("");
       setIdentityOpen(false);
       setNotice({ tone: "good", text: purpose === "REVERIFY" ? "X account reverified." : "X account bound. You have 100 REP." });
     } catch (error) {
-      if (submittedAttempt && error instanceof CredenceTransactionExecutionError) {
+      const submitted = submittedAttempt as VerificationAttempt | null;
+      if (submitted && error instanceof CredenceTransactionExecutionError) {
         const failedAttempt: VerificationAttempt = {
-          ...submittedAttempt,
+          ...submitted,
           status: "FAILED",
           error: error.message,
         };
@@ -777,8 +823,8 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
           tone: "bad",
           text: "Verification failed on-chain. No REP was awarded.",
         });
-      } else if (submittedAttempt) {
-        rememberVerification(wallet.address, submittedAttempt);
+      } else if (submitted) {
+        rememberVerification(wallet.address, submitted);
         setNotice({
           tone: "plain",
           text: "The transaction was submitted but its result is not confirmed. Do not submit another one.",
@@ -876,7 +922,7 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
             setPendingAction(readPendingAction(connected.address));
             setIdentityOpen(false);
             setSelectedMarket(null);
-            await loadWallet(connected.address);
+            await loadWallet(connected.address, true, connected);
             setNotice({ tone: "good", text: "Connected wallet account changed." });
           } catch (error) {
             setNotice({
@@ -919,11 +965,6 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
           <span /> {wallet && !networkReady ? "Wrong network" : "Polymarket · Bradbury"}
         </div>
         <div className="header-actions">
-          {signedIn ? (
-            <span className="viewer-name">{viewer?.displayName?.split(" ")[0]}</span>
-          ) : (
-            <a className="quiet-button" href={signInPath}>Sign in</a>
-          )}
           {wallet && (
             <button className="quiet-button" onClick={() => setIdentityOpen(true)}>
               <ShieldIcon /> {identity?.bound ? `@${identity.handle}` : "Verify X"}
@@ -1183,7 +1224,7 @@ export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
 
       <footer>
         <span>Credence · Bradbury testnet</span>
-        <div><a href={BRADBURY_FAUCET_URL} target="_blank" rel="noreferrer">Faucet</a><a href={BRADBURY_EXPLORER_URL} target="_blank" rel="noreferrer">Explorer</a><a href={`${BRADBURY_EXPLORER_URL}address/${CREDENCE_CONTRACT_ADDRESS}`} target="_blank" rel="noreferrer">Contract</a></div>
+        <div><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/support">Support</a><a href={BRADBURY_FAUCET_URL} target="_blank" rel="noreferrer">Faucet</a><a href={BRADBURY_EXPLORER_URL} target="_blank" rel="noreferrer">Explorer</a><a href={`${BRADBURY_EXPLORER_URL}address/${CREDENCE_CONTRACT_ADDRESS}`} target="_blank" rel="noreferrer">Contract</a></div>
       </footer>
 
       {selectedMarket && (

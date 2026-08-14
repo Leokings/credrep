@@ -3,6 +3,7 @@ import { testnetBradbury } from "genlayer-js/chains";
 import { CalldataAddress } from "genlayer-js/types";
 import { chainMarkets, chainPositions, chainProfiles } from "../db/schema";
 import { CREDENCE_CONTRACT_ADDRESS } from "./deployment";
+import { normalizeWalletAddress } from "./wallet-address";
 
 const readClient = createClient({ chain: testnetBradbury });
 const CONTRACT_KEY = CREDENCE_CONTRACT_ADDRESS.toLowerCase();
@@ -27,12 +28,17 @@ function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-export function normalizeWalletAddress(address: string): string {
-  const normalized = address.trim().toLowerCase();
-  if (!/^0x[0-9a-f]{40}$/.test(normalized)) {
-    throw new Error("Enter a valid EVM wallet address.");
+function asDate(value: unknown): Date {
+  const parsed = new Date(asString(value));
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error("Bradbury returned an invalid timestamp.");
   }
-  return normalized;
+  return parsed;
+}
+
+function asOptionalDate(value: unknown): Date | null {
+  const raw = asString(value);
+  return raw ? asDate(raw) : null;
 }
 
 function toCalldataAddress(address: string) {
@@ -98,7 +104,7 @@ export async function indexBradburyWallet(address: string) {
     }),
   );
 
-  const indexedAt = new Date().toISOString();
+  const indexedAt = new Date();
   const { getDb } = await import("../db");
   const db = getDb();
 
@@ -188,8 +194,8 @@ export async function indexBradburyWallet(address: string) {
           stake: asNumber(position.stake),
           status: asString(position.status),
           scoreBps: asNumber(position.score_bps),
-          createdAt: asString(position.created_at),
-          settledAt: asString(position.settled_at),
+          createdAt: asDate(position.created_at),
+          settledAt: asOptionalDate(position.settled_at),
           indexedAt,
         })
         .onConflictDoUpdate({
@@ -204,8 +210,8 @@ export async function indexBradburyWallet(address: string) {
             stake: asNumber(position.stake),
             status: asString(position.status),
             scoreBps: asNumber(position.score_bps),
-            createdAt: asString(position.created_at),
-            settledAt: asString(position.settled_at),
+            createdAt: asDate(position.created_at),
+            settledAt: asOptionalDate(position.settled_at),
             indexedAt,
           },
         });
@@ -216,6 +222,6 @@ export async function indexBradburyWallet(address: string) {
     indexed: true,
     positions: positions.length,
     truncated: predictionsMade > MAX_INDEXED_POSITIONS,
-    indexedAt,
+    indexedAt: indexedAt.toISOString(),
   };
 }

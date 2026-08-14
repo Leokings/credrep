@@ -35,7 +35,21 @@ site never receives the deployer key.
 
 ```bash
 npm install
+copy .env.example .env.local
 npm run dev
+```
+
+The web runtime is standard Next.js. `DATABASE_URL` points to the dedicated
+Neon Postgres project; `INDEX_SESSION_SECRET` signs seven-day HTTP-only wallet
+index sessions; and `RATE_LIMIT_SECRET` keys pseudonymous abuse-prevention
+hashes. Generate different random values for the two secrets and never commit
+`.env.local`.
+
+Create and apply the Postgres schema with:
+
+```bash
+npm run db:generate
+npm run db:migrate
 ```
 
 ## Validation
@@ -50,6 +64,16 @@ gltest tests/integration/test_credence_forecasts.py -v -s --network studionet
 
 The repository also runs the web checks, production dependency audit, GenVM
 lint, and direct contract tests in GitHub Actions. `GET /api/health` reports the
-deployed contract configuration and D1 connectivity without exposing user data.
+deployed contract configuration and Postgres connectivity without exposing
+credentials or user data. Vercel runtime logs are structured JSON; Vercel Web
+Analytics and Speed Insights are installed in the root layout.
+
+## Public index authorization
+
+GenLayer remains the source of truth. A connected, registered wallet signs one
+human-readable, short-lived challenge before the backend refreshes its public
+record. The signature cannot submit a transaction or spend REP. A signed,
+HTTP-only cookie permits silent refreshes for seven days; index and challenge
+writes are rate-limited by wallet and keyed network hash.
 
 See `ARCHITECTURE.md` for the trust and settlement boundaries.

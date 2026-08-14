@@ -7,7 +7,7 @@ money, shares, liquidity, or odds. Every position belongs to one wallet and
 risks only that wallet's REP.
 
 The website fetches active Yes/No questions from Polymarket's Gamma API and
-caches them in D1 for discovery. The cache is not authoritative. On the first
+caches them in Neon Postgres for discovery. The cache is not authoritative. On the first
 position, GenLayer validators independently fetch the market by ID and freeze
 its question, rules, slug, and deadline onchain. Validators fetch it again for
 resolution. The feed refreshes while the site is open, and expired feed entries
@@ -58,9 +58,17 @@ correct prediction can take REP above 100.
 ## Ownership
 
 GenLayer owns X binding, market verification, REP accounting, positions,
-resolution, calibration scoring, and recovery. D1 owns only the external feed
-cache and non-authoritative site records. The browser wallet signs every action
-that changes a user's state.
+resolution, calibration scoring, and recovery. Neon Postgres owns only the
+external feed cache, public chain read model, short-lived index challenges, and
+rate-limit counters. The browser wallet signs every action that changes a
+user's state.
+
+The public read model no longer trusts hosting-provider identity headers. A
+registered wallet signs a five-minute, origin-bound authorization challenge.
+The server verifies and consumes it once, then issues a signed, HTTP-only,
+same-site session scoped to `/api/index` for seven days. The message explicitly
+cannot authorize a transaction or spend REP. Index and challenge endpoints are
+rate-limited separately by wallet and keyed network hash.
 
 The current Bradbury contract registers the dedicated Credence deployer as its
 upgrade authority. Future code upgrades must preserve the declared storage
@@ -75,7 +83,9 @@ the Bradbury Explorer until the transaction reaches a terminal state.
 
 ## Operations
 
-`GET /api/health` checks D1 connectivity and confirms that a contract address is
-configured. Feed/index failures are logged with their route and upstream source.
+`GET /api/health` checks Postgres connectivity and confirms that a contract
+address is configured. Feed/index failures emit structured route, request,
+status, and duration logs without recording signatures or secrets. Vercel Web
+Analytics and Speed Insights cover aggregate traffic and web performance.
 Continuous integration runs the web build, lint, rendered-route tests,
 production dependency audit, GenVM lint, and direct contract tests.

@@ -25,9 +25,3 @@ export type MarketFeed = {
   stale: boolean;
   source: "Polymarket";
 };
-
-export type Viewer = {
-  userId: string;
-  displayName: string;
-  email: string;
-} | null;

@@ -3,8 +3,10 @@
 import { createClient } from "genlayer-js";
 import { testnetBradbury } from "genlayer-js/chains";
 import {
+  type CalldataEncodable,
   CalldataAddress,
   ExecutionResult,
+  type Hash,
   TransactionStatus,
 } from "genlayer-js/types";
 import {
@@ -114,6 +116,7 @@ export type ChainPosition = {
 
 export type ConnectedCredenceWallet = {
   address: `0x${string}`;
+  signIndexAuthorization(message: string): Promise<`0x${string}`>;
   beginXBinding(onSubmitted?: OnSubmitted): Promise<`0x${string}`>;
   verifyXBinding(
     proofUrl: string,
@@ -239,7 +242,7 @@ export async function waitForCredenceTransaction(
   transactionHash: `0x${string}`,
 ) {
   const receipt = await readClient.waitForTransactionReceipt({
-    hash: transactionHash,
+    hash: transactionHash as Hash,
     status: TransactionStatus.ACCEPTED,
     interval: 1_500,
     retries: 160,
@@ -496,7 +499,7 @@ export async function connectCredenceWallet(
 
   async function write(
     functionName: string,
-    args: unknown[] = [],
+    args: CalldataEncodable[] = [],
     onSubmitted?: OnSubmitted,
   ): Promise<`0x${string}`> {
     const transactionHash = (await writeClient.writeContract({
@@ -512,6 +515,16 @@ export async function connectCredenceWallet(
 
   return {
     address,
+    signIndexAuthorization: async (message) => {
+      const signature = await provider.request({
+        method: "personal_sign",
+        params: [message, address],
+      });
+      if (typeof signature !== "string" || !/^0x[0-9a-f]+$/i.test(signature)) {
+        throw new Error("The wallet returned an invalid signature.");
+      }
+      return signature as `0x${string}`;
+    },
     beginXBinding: (onSubmitted) => write("begin_x_binding", [], onSubmitted),
     verifyXBinding: (proofUrl, onSubmitted) =>
       write("verify_x_binding", [proofUrl], onSubmitted),

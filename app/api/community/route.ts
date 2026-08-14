@@ -2,10 +2,12 @@ import { and, count, desc, eq } from "drizzle-orm";
 import { chainMarkets, chainPositions, chainProfiles } from "../../../db/schema";
 import { CREDENCE_CONTRACT_ADDRESS } from "../../../lib/deployment";
 import type { CommunityFeed } from "../../../lib/community-data";
+import { createRequestLogger } from "../../../lib/server-logging";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const log = createRequestLogger(request, "/api/community");
   try {
     const { getDb } = await import("../../../db");
     const db = getDb();
@@ -62,30 +64,47 @@ export async function GET() {
         .limit(40),
     ]);
 
-    return Response.json({
-      contractAddress: CREDENCE_CONTRACT_ADDRESS,
-      indexedProfiles: profileCount[0]?.value ?? 0,
-      leaderboard: profiles.map((profile, index) => ({
-        rank: index + 1,
-        walletAddress: profile.walletAddress,
-        xHandle: profile.xHandle,
-        identityStatus: profile.identityStatus,
-        reputation: profile.reputation,
-        availableReputation: profile.availableReputation,
-        reputationAtRisk: profile.reputationAtRisk,
-        predictionsMade: profile.predictionsMade,
-        openPredictions: profile.openPredictions,
-        resolvedPredictions: profile.resolvedPredictions,
-        correctPredictions: profile.correctPredictions,
-        accuracyBps: profile.accuracyBps,
-        predictionScoreBps: profile.predictionScoreBps,
-        indexedAt: profile.indexedAt,
-      })),
-      activity,
-    } satisfies CommunityFeed);
+    log.done(200, {
+      profiles: profileCount[0]?.value ?? 0,
+      activity: activity.length,
+    });
+    return Response.json(
+      {
+        contractAddress: CREDENCE_CONTRACT_ADDRESS,
+        indexedProfiles: profileCount[0]?.value ?? 0,
+        leaderboard: profiles.map((profile, index) => ({
+          rank: index + 1,
+          walletAddress: profile.walletAddress,
+          xHandle: profile.xHandle,
+          identityStatus: profile.identityStatus,
+          reputation: profile.reputation,
+          availableReputation: profile.availableReputation,
+          reputationAtRisk: profile.reputationAtRisk,
+          predictionsMade: profile.predictionsMade,
+          openPredictions: profile.openPredictions,
+          resolvedPredictions: profile.resolvedPredictions,
+          correctPredictions: profile.correctPredictions,
+          accuracyBps: profile.accuracyBps,
+          predictionScoreBps: profile.predictionScoreBps,
+          indexedAt: profile.indexedAt.toISOString(),
+        })),
+        activity: activity.map((item) => ({
+          ...item,
+          createdAt: item.createdAt.toISOString(),
+          settledAt: item.settledAt?.toISOString() ?? "",
+        })),
+      } satisfies CommunityFeed,
+      {
+        headers: {
+          "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
+        },
+      },
+    );
   } catch (error) {
-    console.error("community_feed_failed", error);
-    const message = error instanceof Error ? error.message : "Community feed unavailable.";
-    return Response.json({ error: message }, { status: 503 });
+    log.failed(error, 503);
+    return Response.json(
+      { error: "Community feed is temporarily unavailable." },
+      { status: 503 },
+    );
   }
 }

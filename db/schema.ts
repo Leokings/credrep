@@ -1,13 +1,15 @@
 import { sql } from "drizzle-orm";
 import {
+  check,
   index,
   integer,
   primaryKey,
-  sqliteTable,
+  pgTable,
   text,
-} from "drizzle-orm/sqlite-core";
+  timestamp,
+} from "drizzle-orm/pg-core";
 
-export const sourcedMarkets = sqliteTable(
+export const sourcedMarkets = pgTable(
   "sourced_markets",
   {
     id: text("id").primaryKey(),
@@ -16,19 +18,29 @@ export const sourcedMarkets = sqliteTable(
     description: text("description").notNull(),
     category: text("category").notNull(),
     status: text("status").notNull().default("OPEN"),
-    endAt: text("end_at").notNull(),
+    endAt: timestamp("end_at", { withTimezone: true }).notNull(),
     sourceUrl: text("source_url").notNull(),
     volume24hr: integer("volume_24hr").notNull().default(0),
-    fetchedAt: text("fetched_at").notNull(),
-    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [
     index("idx_sourced_markets_status_end").on(table.status, table.endAt),
     index("idx_sourced_markets_volume").on(table.volume24hr),
+    check(
+      "sourced_markets_status_check",
+      sql`${table.status} in ('OPEN', 'CLOSED')`,
+    ),
+    check(
+      "sourced_markets_volume_check",
+      sql`${table.volume24hr} >= 0`,
+    ),
   ],
 );
 
-export const chainProfiles = sqliteTable(
+export const chainProfiles = pgTable(
   "chain_profiles",
   {
     contractAddress: text("contract_address").notNull(),
@@ -46,7 +58,7 @@ export const chainProfiles = sqliteTable(
     voidPredictions: integer("void_predictions").notNull(),
     accuracyBps: integer("accuracy_bps").notNull(),
     predictionScoreBps: integer("prediction_score_bps").notNull(),
-    indexedAt: text("indexed_at").notNull(),
+    indexedAt: timestamp("indexed_at", { withTimezone: true }).notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.contractAddress, table.walletAddress] }),
@@ -58,10 +70,22 @@ export const chainProfiles = sqliteTable(
       table.contractAddress,
       table.predictionsMade,
     ),
+    check(
+      "chain_profiles_identity_status_check",
+      sql`${table.identityStatus} in ('UNBOUND', 'PENDING', 'VERIFIED', 'GRACE', 'STALE')`,
+    ),
+    check(
+      "chain_profiles_reputation_check",
+      sql`${table.reputation} >= 0 and ${table.availableReputation} >= 0 and ${table.reputationAtRisk} >= 0`,
+    ),
+    check(
+      "chain_profiles_score_check",
+      sql`${table.accuracyBps} between 0 and 10000 and ${table.predictionScoreBps} between 0 and 10000`,
+    ),
   ],
 );
 
-export const chainMarkets = sqliteTable(
+export const chainMarkets = pgTable(
   "chain_markets",
   {
     contractAddress: text("contract_address").notNull(),
@@ -75,7 +99,7 @@ export const chainMarkets = sqliteTable(
     outcome: text("outcome").notNull(),
     predictionCount: integer("prediction_count").notNull(),
     totalReputationStaked: integer("total_reputation_staked").notNull(),
-    indexedAt: text("indexed_at").notNull(),
+    indexedAt: timestamp("indexed_at", { withTimezone: true }).notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.contractAddress, table.marketId] }),
@@ -84,10 +108,22 @@ export const chainMarkets = sqliteTable(
       table.status,
       table.endTimeUnix,
     ),
+    check(
+      "chain_markets_status_check",
+      sql`${table.status} in ('OPEN', 'RESOLVED', 'VOID')`,
+    ),
+    check(
+      "chain_markets_outcome_check",
+      sql`${table.outcome} in ('', 'YES', 'NO', 'VOID')`,
+    ),
+    check(
+      "chain_markets_counts_check",
+      sql`${table.endTimeUnix} >= 0 and ${table.predictionCount} >= 0 and ${table.totalReputationStaked} >= 0`,
+    ),
   ],
 );
 
-export const chainPositions = sqliteTable(
+export const chainPositions = pgTable(
   "chain_positions",
   {
     contractAddress: text("contract_address").notNull(),
@@ -98,9 +134,9 @@ export const chainPositions = sqliteTable(
     stake: integer("stake").notNull(),
     status: text("status").notNull(),
     scoreBps: integer("score_bps").notNull(),
-    createdAt: text("created_at").notNull(),
-    settledAt: text("settled_at").notNull(),
-    indexedAt: text("indexed_at").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+    indexedAt: timestamp("indexed_at", { withTimezone: true }).notNull(),
   },
   (table) => [
     primaryKey({
@@ -120,5 +156,54 @@ export const chainPositions = sqliteTable(
       table.marketId,
       table.status,
     ),
+    check(
+      "chain_positions_prediction_check",
+      sql`${table.prediction} in ('YES', 'NO')`,
+    ),
+    check(
+      "chain_positions_status_check",
+      sql`${table.status} in ('OPEN', 'WON', 'LOST', 'VOID')`,
+    ),
+    check(
+      "chain_positions_values_check",
+      sql`${table.confidenceBps} between 5000 and 9500 and ${table.stake} > 0 and ${table.scoreBps} between 0 and 10000`,
+    ),
+  ],
+);
+
+export const walletIndexChallenges = pgTable(
+  "wallet_index_challenges",
+  {
+    walletAddress: text("wallet_address").primaryKey(),
+    nonce: text("nonce").notNull(),
+    message: text("message").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("idx_wallet_index_challenges_expiry").on(table.expiresAt)],
+);
+
+export const apiRateLimits = pgTable(
+  "api_rate_limits",
+  {
+    id: text("id").primaryKey(),
+    scope: text("scope").notNull(),
+    subjectHash: text("subject_hash").notNull(),
+    windowStartedAt: timestamp("window_started_at", {
+      withTimezone: true,
+    }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    count: integer("count").notNull().default(1),
+  },
+  (table) => [
+    index("idx_api_rate_limits_expiry").on(table.expiresAt),
+    index("idx_api_rate_limits_scope_subject").on(
+      table.scope,
+      table.subjectHash,
+    ),
+    check("api_rate_limits_count_check", sql`${table.count} > 0`),
   ],
 );

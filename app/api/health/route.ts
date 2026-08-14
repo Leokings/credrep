@@ -1,10 +1,12 @@
 import { count } from "drizzle-orm";
 import { chainProfiles, sourcedMarkets } from "../../../db/schema";
 import { CREDENCE_CONTRACT_ADDRESS } from "../../../lib/deployment";
+import { createRequestLogger } from "../../../lib/server-logging";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const log = createRequestLogger(request, "/api/health");
   try {
     const { getDb } = await import("../../../db");
     const db = getDb();
@@ -12,19 +14,24 @@ export async function GET() {
       db.select({ value: count() }).from(chainProfiles),
       db.select({ value: count() }).from(sourcedMarkets),
     ]);
-    return Response.json({
-      ok: true,
-      database: "available",
-      indexedProfiles: profiles[0]?.value ?? 0,
-      sourcedMarkets: markets[0]?.value ?? 0,
-      contractAddress: CREDENCE_CONTRACT_ADDRESS,
-      checkedAt: new Date().toISOString(),
-    });
+    log.done(200);
+    return Response.json(
+      {
+        ok: true,
+        database: "available",
+        indexedProfiles: profiles[0]?.value ?? 0,
+        sourcedMarkets: markets[0]?.value ?? 0,
+        contractAddress: CREDENCE_CONTRACT_ADDRESS,
+        deploymentRegion: process.env.VERCEL_REGION ?? "local",
+        checkedAt: new Date().toISOString(),
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
-    console.error("health_check_failed", error);
+    log.failed(error, 503);
     return Response.json(
       { ok: false, database: "unavailable", checkedAt: new Date().toISOString() },
-      { status: 503 },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
     );
   }
 }

@@ -1,7 +1,8 @@
-import { desc, gt, lte } from "drizzle-orm";
+import { desc, gt, lte, sql } from "drizzle-orm";
 import { sourcedMarkets } from "../../../db/schema";
 import { fetchPolymarketFeed } from "../../../lib/polymarket";
 import type { MarketCategory, MarketFeed } from "../../../lib/product-data";
+import { createRequestLogger } from "../../../lib/server-logging";
 
 export const dynamic = "force-dynamic";
 
@@ -10,36 +11,37 @@ async function saveFeed(
 ) {
   const { getDb } = await import("../../../db");
   const db = getDb();
-  await Promise.all(
-    feed.markets.map((market) =>
-      db
-        .insert(sourcedMarkets)
-        .values({
+  if (feed.markets.length) {
+    await db
+      .insert(sourcedMarkets)
+      .values(
+        feed.markets.map((market) => ({
           ...market,
+          endAt: new Date(market.endAt),
           status: "OPEN",
-          fetchedAt: feed.fetchedAt,
-          updatedAt: feed.fetchedAt,
-        })
-        .onConflictDoUpdate({
-          target: sourcedMarkets.id,
-          set: {
-            slug: market.slug,
-            question: market.question,
-            description: market.description,
-            category: market.category,
-            status: "OPEN",
-            endAt: market.endAt,
-            sourceUrl: market.sourceUrl,
-            volume24hr: market.volume24hr,
-            fetchedAt: feed.fetchedAt,
-            updatedAt: feed.fetchedAt,
-          },
-        }),
-    ),
-  );
+          fetchedAt: new Date(feed.fetchedAt),
+          updatedAt: new Date(feed.fetchedAt),
+        })),
+      )
+      .onConflictDoUpdate({
+        target: sourcedMarkets.id,
+        set: {
+          slug: sql`excluded.slug`,
+          question: sql`excluded.question`,
+          description: sql`excluded.description`,
+          category: sql`excluded.category`,
+          status: sql`excluded.status`,
+          endAt: sql`excluded.end_at`,
+          sourceUrl: sql`excluded.source_url`,
+          volume24hr: sql`excluded.volume_24hr`,
+          fetchedAt: sql`excluded.fetched_at`,
+          updatedAt: sql`excluded.updated_at`,
+        },
+      });
+  }
   await db
     .delete(sourcedMarkets)
-    .where(lte(sourcedMarkets.endAt, new Date().toISOString()));
+    .where(lte(sourcedMarkets.endAt, new Date()));
 }
 
 async function cachedFeed(): Promise<MarketFeed | null> {
@@ -47,58 +49,77 @@ async function cachedFeed(): Promise<MarketFeed | null> {
   const rows = await getDb()
     .select()
     .from(sourcedMarkets)
-    .where(gt(sourcedMarkets.endAt, new Date().toISOString()))
+    .where(gt(sourcedMarkets.endAt, new Date()))
     .orderBy(desc(sourcedMarkets.volume24hr))
     .limit(30);
   if (!rows.length) return null;
   return {
     source: "Polymarket",
     stale: true,
-    fetchedAt: rows[0].fetchedAt,
+    fetchedAt: rows[0].fetchedAt.toISOString(),
     markets: rows.map((row) => ({
       id: row.id,
       slug: row.slug,
       question: row.question,
       description: row.description,
       category: row.category as MarketCategory,
-      endAt: row.endAt,
+      endAt: row.endAt.toISOString(),
       sourceUrl: row.sourceUrl,
     })),
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const log = createRequestLogger(request, "/api/markets");
   try {
     const feed = await fetchPolymarketFeed();
     try {
       await saveFeed(feed);
     } catch (error) {
       console.warn("market_cache_write_failed", error);
-      // The live public feed remains usable while a new D1 migration settles.
+      // The live public feed remains usable while Postgres is unavailable.
     }
-    return Response.json({
-      source: "Polymarket",
-      stale: false,
-      fetchedAt: feed.fetchedAt,
-      markets: feed.markets.map((market) => ({
-        id: market.id,
-        slug: market.slug,
-        question: market.question,
-        description: market.description,
-        category: market.category,
-        endAt: market.endAt,
-        sourceUrl: market.sourceUrl,
-      })),
-    } satisfies MarketFeed);
+    log.done(200, { markets: feed.markets.length, stale: false });
+    return Response.json(
+      {
+        source: "Polymarket",
+        stale: false,
+        fetchedAt: feed.fetchedAt,
+        markets: feed.markets.map((market) => ({
+          id: market.id,
+          slug: market.slug,
+          question: market.question,
+          description: market.description,
+          category: market.category,
+          endAt: market.endAt,
+          sourceUrl: market.sourceUrl,
+        })),
+      } satisfies MarketFeed,
+      {
+        headers: {
+          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+        },
+      },
+    );
   } catch (error) {
     try {
       const cached = await cachedFeed();
-      if (cached) return Response.json(cached);
+      if (cached) {
+        log.done(200, { markets: cached.markets.length, stale: true });
+        return Response.json(cached, {
+          headers: {
+            "Cache-Control": "public, s-maxage=30, stale-while-revalidate=300",
+          },
+        });
+      }
     } catch (cacheError) {
-      console.error("market_feed_and_cache_failed", { error, cacheError });
+      log.failed(cacheError, 502, { upstreamFailed: true });
       // Fall through to a clear upstream error.
     }
-    const message = error instanceof Error ? error.message : "Market feed unavailable.";
-    return Response.json({ error: message }, { status: 502 });
+    log.failed(error, 502);
+    return Response.json(
+      { error: "Market feed is temporarily unavailable." },
+      { status: 502 },
+    );
   }
 }
