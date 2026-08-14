@@ -27,8 +27,12 @@ MAX_RESOLUTION_DELAY = 366 * 24 * 60 * 60
 X_CHALLENGE_VALIDITY_SECONDS = 7 * 24 * 60 * 60
 X_VERIFICATION_VALIDITY_SECONDS = 30 * 24 * 60 * 60
 X_VERIFICATION_GRACE_SECONDS = 7 * 24 * 60 * 60
+X_REVERIFICATION_WINDOW_SECONDS = 7 * 24 * 60 * 60
 MAX_X_PROOF_BYTES = 300_000
 MAX_X_TARGET_SECTION_BYTES = 50_000
+
+CHALLENGE_PURPOSE_BIND = "BIND"
+CHALLENGE_PURPOSE_REVERIFY = "REVERIFY"
 
 IDENTITY_UNBOUND = "UNBOUND"
 IDENTITY_PENDING = "PENDING"
@@ -297,6 +301,7 @@ class CredenceClaims(gl.Contract):
     binding_attempts: TreeMap[Address, u256]
     pending_binding_challenges: TreeMap[Address, str]
     pending_binding_expires_at: TreeMap[Address, u256]
+    pending_challenge_purposes: TreeMap[Address, str]
     wallet_identity_ids: TreeMap[Address, str]
     identity_wallet_addresses: TreeMap[str, str]
     identity_handles: TreeMap[Address, str]
@@ -427,25 +432,21 @@ class CredenceClaims(gl.Contract):
             _transient("x_post_id_mismatch")
         return parsed
 
-    @gl.public.write
-    def begin_x_binding(self) -> None:
-        account = gl.message.sender_address
-        if self.wallet_identity_ids.get(account, "") or self.registered.get(
-            account, False
-        ):
-            _expected("wallet_already_bound")
-
+    def _issue_x_challenge(self, account: Address, purpose: str) -> None:
         now = _now_unix()
         current_challenge = self.pending_binding_challenges.get(account, "")
         current_expiry = int(
             self.pending_binding_expires_at.get(account, u256(0))
         )
         if current_challenge and now <= current_expiry:
-            _expected("x_binding_challenge_active")
+            _expected("x_verification_challenge_active")
 
         attempt = int(self.binding_attempts.get(account, u256(0))) + 1
+        challenge_label = (
+            "bind" if purpose == CHALLENGE_PURPOSE_BIND else "reverify"
+        )
         challenge = (
-            f"credence-bind:{int(gl.message.chain_id)}:"
+            f"credence-{challenge_label}:{int(gl.message.chain_id)}:"
             f"{_address_key(account)}:{attempt}"
         )
         self.binding_attempts[account] = u256(attempt)
@@ -453,6 +454,21 @@ class CredenceClaims(gl.Contract):
         self.pending_binding_expires_at[account] = u256(
             now + X_CHALLENGE_VALIDITY_SECONDS
         )
+        self.pending_challenge_purposes[account] = purpose
+
+    def _clear_x_challenge(self, account: Address) -> None:
+        self.pending_binding_challenges[account] = ""
+        self.pending_binding_expires_at[account] = u256(0)
+        self.pending_challenge_purposes[account] = ""
+
+    @gl.public.write
+    def begin_x_binding(self) -> None:
+        account = gl.message.sender_address
+        if self.wallet_identity_ids.get(account, "") or self.registered.get(
+            account, False
+        ):
+            _expected("wallet_already_bound")
+        self._issue_x_challenge(account, CHALLENGE_PURPOSE_BIND)
 
     @gl.public.write
     def verify_x_binding(self, proof_url: str) -> None:
@@ -463,7 +479,8 @@ class CredenceClaims(gl.Contract):
             _expected("wallet_already_bound")
 
         challenge = self.pending_binding_challenges.get(account, "")
-        if not challenge:
+        purpose = self.pending_challenge_purposes.get(account, "")
+        if not challenge or purpose != CHALLENGE_PURPOSE_BIND:
             _expected("x_binding_challenge_missing")
         now = _now_unix()
         if now > int(self.pending_binding_expires_at.get(account, u256(0))):
@@ -488,55 +505,54 @@ class CredenceClaims(gl.Contract):
         self.identity_verified_until[account] = u256(
             now + X_VERIFICATION_VALIDITY_SECONDS
         )
-        self.pending_binding_challenges[account] = ""
-        self.pending_binding_expires_at[account] = u256(0)
+        self._clear_x_challenge(account)
         self._activate_user(account)
 
     @gl.public.write
-    def refresh_x_identity(self, account: Address) -> None:
+    def begin_x_reverification(self) -> None:
+        account = gl.message.sender_address
         identity_id = self.wallet_identity_ids.get(account, "")
-        if not identity_id:
+        if not identity_id or not self.registered.get(account, False):
             _expected("x_identity_not_bound")
 
-        proof_url = self.identity_proof_urls.get(account, "")
-        challenge = self.identity_challenges.get(account, "")
-        verified = self._run_x_proof_consensus(proof_url, challenge)
-        if verified["identity_id"] != identity_id:
-            _expected("x_identity_changed")
-
         now = _now_unix()
-        handle = verified["handle"]
-        self.identity_handles[account] = handle
-        self.identity_proof_urls[account] = (
-            f"https://x.com/{handle}/status/{verified['tweet_id']}"
+        verified_until = int(
+            self.identity_verified_until.get(account, u256(0))
         )
-        self.identity_verified_at[account] = u256(now)
-        self.identity_verified_until[account] = u256(
-            now + X_VERIFICATION_VALIDITY_SECONDS
-        )
+        if now + X_REVERIFICATION_WINDOW_SECONDS < verified_until:
+            _expected("x_reverification_not_due")
+        self._issue_x_challenge(account, CHALLENGE_PURPOSE_REVERIFY)
 
     @gl.public.write
-    def replace_x_proof(self, proof_url: str) -> None:
+    def verify_x_reverification(self, proof_url: str) -> None:
         account = gl.message.sender_address
         identity_id = self.wallet_identity_ids.get(account, "")
         if not identity_id:
             _expected("x_identity_not_bound")
 
-        challenge = self.identity_challenges.get(account, "")
+        challenge = self.pending_binding_challenges.get(account, "")
+        purpose = self.pending_challenge_purposes.get(account, "")
+        if not challenge or purpose != CHALLENGE_PURPOSE_REVERIFY:
+            _expected("x_reverification_challenge_missing")
+        now = _now_unix()
+        if now > int(self.pending_binding_expires_at.get(account, u256(0))):
+            _expected("x_reverification_challenge_expired")
+
         verified = self._run_x_proof_consensus(proof_url, challenge)
         if verified["identity_id"] != identity_id:
             _expected("x_identity_changed")
 
-        now = _now_unix()
         handle = verified["handle"]
         self.identity_handles[account] = handle
         self.identity_proof_urls[account] = (
             f"https://x.com/{handle}/status/{verified['tweet_id']}"
         )
+        self.identity_challenges[account] = challenge
         self.identity_verified_at[account] = u256(now)
         self.identity_verified_until[account] = u256(
             now + X_VERIFICATION_VALIDITY_SECONDS
         )
+        self._clear_x_challenge(account)
 
     def _total_reputation(self, account: Address) -> int:
         return int(self.reputation_balances.get(account, u256(0))) + int(
@@ -878,6 +894,7 @@ reliable outcome. Output only TRUE, FALSE, or VOID in the outcome field.
             "expires_at": expires_at,
             "active": bool(challenge) and now <= expires_at,
             "attempt": int(self.binding_attempts.get(account, u256(0))),
+            "purpose": self.pending_challenge_purposes.get(account, ""),
         }
 
     @gl.public.view
@@ -889,6 +906,11 @@ reliable outcome. Output only TRUE, FALSE, or VOID in the outcome field.
             self.identity_verified_until.get(account, u256(0))
         )
         status = self._identity_status_value(account, now)
+        pending_challenge = self.pending_binding_challenges.get(account, "")
+        pending_expires_at = int(
+            self.pending_binding_expires_at.get(account, u256(0))
+        )
+        pending_purpose = self.pending_challenge_purposes.get(account, "")
         return {
             "bound": bool(identity_id),
             "status": status,
@@ -903,8 +925,11 @@ reliable outcome. Output only TRUE, FALSE, or VOID in the outcome field.
                 if verified_until > 0
                 else 0
             ),
-            "refresh_due": bool(identity_id)
-            and now + X_VERIFICATION_GRACE_SECONDS >= verified_until,
+            "reverification_due": bool(identity_id)
+            and now + X_REVERIFICATION_WINDOW_SECONDS >= verified_until,
+            "reverification_pending": bool(pending_challenge)
+            and now <= pending_expires_at
+            and pending_purpose == CHALLENGE_PURPOSE_REVERIFY,
             "can_claim": status in (IDENTITY_VERIFIED, IDENTITY_GRACE),
         }
 
@@ -1013,4 +1038,5 @@ reliable outcome. Output only TRUE, FALSE, or VOID in the outcome field.
             "recovery_target": RECOVERY_TARGET,
             "x_verification_validity_seconds": X_VERIFICATION_VALIDITY_SECONDS,
             "x_verification_grace_seconds": X_VERIFICATION_GRACE_SECONDS,
+            "x_reverification_window_seconds": X_REVERIFICATION_WINDOW_SECONDS,
         }

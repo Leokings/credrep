@@ -49,6 +49,7 @@ export type BindingChallenge = {
   expiresAt: number;
   active: boolean;
   attempt: number;
+  purpose: "" | "BIND" | "REVERIFY";
 };
 
 export type ChainIdentity = {
@@ -61,7 +62,8 @@ export type ChainIdentity = {
   verifiedAt: number;
   verifiedUntil: number;
   graceUntil: number;
-  refreshDue: boolean;
+  reverificationDue: boolean;
+  reverificationPending: boolean;
   canClaim: boolean;
 };
 
@@ -77,6 +79,7 @@ export type ChainProtocolStats = {
   recoveryTarget: number;
   xVerificationValiditySeconds: number;
   xVerificationGraceSeconds: number;
+  xReverificationWindowSeconds: number;
 };
 
 export type ChainClaim = {
@@ -98,8 +101,8 @@ export type ConnectedCredenceWallet = {
   address: `0x${string}`;
   beginXBinding(): Promise<`0x${string}`>;
   verifyXBinding(proofUrl: string): Promise<`0x${string}`>;
-  refreshXIdentity(): Promise<`0x${string}`>;
-  replaceXProof(proofUrl: string): Promise<`0x${string}`>;
+  beginXReverification(): Promise<`0x${string}`>;
+  verifyXReverification(proofUrl: string): Promise<`0x${string}`>;
   startRecovery(): Promise<`0x${string}`>;
   claimRecovery(): Promise<`0x${string}`>;
   makeClaim(input: ClaimInput): Promise<{
@@ -207,6 +210,7 @@ export async function readBindingChallenge(
     expiresAt: asNumber(raw.expires_at),
     active: Boolean(raw.active),
     attempt: asNumber(raw.attempt),
+    purpose: asString(raw.purpose) as BindingChallenge["purpose"],
   };
 }
 
@@ -230,7 +234,8 @@ export async function readChainIdentity(
     verifiedAt: asNumber(raw.verified_at),
     verifiedUntil: asNumber(raw.verified_until),
     graceUntil: asNumber(raw.grace_until),
-    refreshDue: Boolean(raw.refresh_due),
+    reverificationDue: Boolean(raw.reverification_due),
+    reverificationPending: Boolean(raw.reverification_pending),
     canClaim: Boolean(raw.can_claim),
   };
 }
@@ -257,6 +262,9 @@ export async function readProtocolStats(): Promise<ChainProtocolStats> {
     ),
     xVerificationGraceSeconds: asNumber(
       raw.x_verification_grace_seconds,
+    ),
+    xReverificationWindowSeconds: asNumber(
+      raw.x_reverification_window_seconds,
     ),
   };
 }
@@ -361,11 +369,11 @@ export async function connectCredenceWallet(): Promise<ConnectedCredenceWallet> 
     verifyXBinding(proofUrl) {
       return write("verify_x_binding", [proofUrl]);
     },
-    refreshXIdentity() {
-      return write("refresh_x_identity", [toCalldataAddress(address)]);
+    beginXReverification() {
+      return write("begin_x_reverification");
     },
-    replaceXProof(proofUrl) {
-      return write("replace_x_proof", [proofUrl]);
+    verifyXReverification(proofUrl) {
+      return write("verify_x_reverification", [proofUrl]);
     },
     startRecovery() {
       return write("start_recovery");

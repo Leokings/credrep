@@ -11,8 +11,10 @@ One stable X account ID can bind to one wallet, and one wallet can bind to one
 X account. The contract, not the website database, enforces both directions.
 The proof is valid for 30 days, followed by a 7-day grace period. A stale
 identity keeps its history and balance but cannot make claims or collect
-recovery until a permissionless recheck succeeds. Contracts do not wake up by
-themselves, so rechecks happen lazily when a person or keeper submits one.
+recovery until its wallet creates a fresh challenge and GenLayer verifies a new
+public post from the same stable X account ID. The original proof cannot renew
+the account. Contracts do not wake up by themselves, so the website prompts the
+wallet owner when reverification is due.
 
 ## Settlement invariant
 
@@ -49,7 +51,7 @@ The D1 preview never decides whether a claim is true.
 
 ## GenLayer owns
 
-- Public X challenge generation, one-to-one account binding, and monthly checks.
+- Public X challenge generation, one-to-one account binding, and monthly fresh-proof reverification.
 - Registration and the 100 REP starting balance after identity verification.
 - One-owner claim creation, immutable statement, rules, sources, deadline, and stake.
 - Locking a person's own REP without creating a pool.
@@ -70,6 +72,8 @@ re-fetch the evidence and must agree on the substantive outcome.
 person connects a wallet
   -> posts its exact challenge from one public X account
   -> GenLayer binds the stable X account ID and grants 100 REP
+  -> every 30 days, posts a new challenge from that same X account
+  -> GenLayer matches the stable ID and renews verification
   -> person writes a future claim
   -> chooses evidence, rule, deadline, and personal REP stake
   -> contract deducts stake from available REP and marks it at risk
@@ -86,13 +90,17 @@ person connects a wallet
 - `contract`: the connected wallet signs Bradbury registration and claim
   transactions; the UI changes only after an accepted, successful execution.
 
-## Current Bradbury contract (v2)
+## Current Bradbury contract (v3)
 
 The production testnet address is
-`0xBFB5C69e93217f3f6AF944225606b9BC60923277`. The deployer is a dedicated
+`0xc93f6BcfF7Dd1c6012D9Cb9908682a70E044F742`. The deployer is a dedicated
 Credence wallet, separate from any workspace wallet. Each product user still
 owns their own contract profile and signs their own claim; the deployer does not
 custody or spend users' reputation.
+
+The immutable v2 contract remains at
+`0xBFB5C69e93217f3f6AF944225606b9BC60923277`. It refreshed the original proof
+instead of requiring a new monthly challenge, so the website no longer uses it.
 
 The immutable v1 contract remains at
 `0x164868c406fe6cFB4a70F93bAE9e3246b5873D34` for historical inspection.

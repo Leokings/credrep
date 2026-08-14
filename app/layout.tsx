@@ -34,7 +34,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "Credence — Put your reputation behind your word",
     description:
-      "Bind one X account to one wallet, risk your own non-transferable reputation, and let GenLayer resolve whether your word held up.",
+      "Bind one X account to one wallet, reverify it with a fresh monthly proof, and risk your own non-transferable reputation on public claims.",
     openGraph: {
       title: "Credence — Put your reputation behind your word",
       description: "One X account. One wallet. Your word, backed by reputation.",

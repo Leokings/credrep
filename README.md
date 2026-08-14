@@ -19,14 +19,17 @@ state.
 ## Bradbury deployment
 
 - Network: GenLayer Bradbury Testnet (chain ID 4221)
-- Contract v2: `0xBFB5C69e93217f3f6AF944225606b9BC60923277`
-- Deployment transaction: `0x8baab27651e9b2075c2d682f5c299e6cd3ed2d9241c1257d74fa45cbb045dc22`
+- Contract v3: `0xc93f6BcfF7Dd1c6012D9Cb9908682a70E044F742`
+- Deployment transaction: `0xae5d4da56eb1a1b473348a59c80643ec237984b6addcc9c4f3074649635cd678`
+- Immutable v2: `0xBFB5C69e93217f3f6AF944225606b9BC60923277`
 - Immutable v1: `0x164868c406fe6cFB4a70F93bAE9e3246b5873D34`
 
 The website reads the deployed contract publicly. A signed-in person connects
 their own MetaMask wallet, posts its exact challenge from X, and submits the
 public post URL. GenLayer binds the stable X account ID, activates 100 REP, and
-requires a fresh verification every 30 days (with a 7-day grace period). The
+requires a brand-new challenge post from that same X account every 30 days
+(with a 7-day grace period). Reusing the original proof does not renew the
+account. The
 dedicated deployment key is never sent to the website or committed here.
 
 ## Local website

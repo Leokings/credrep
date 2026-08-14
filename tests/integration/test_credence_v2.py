@@ -23,6 +23,7 @@ def test_binding_challenge_and_live_x_consensus():
 
     pending = contract.get_binding_challenge(args=[account_arg]).call()
     assert pending["active"] is True
+    assert pending["purpose"] == "BIND"
     assert account.address.lower() in pending["challenge"]
     assert contract.get_identity_status(args=[account_arg]).call()[
         "status"

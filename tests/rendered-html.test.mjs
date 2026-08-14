@@ -30,6 +30,6 @@ test("server-renders the Credence product", async () => {
   assert.match(html, /Verify one X account/);
   assert.match(html, /not a pool/i);
   assert.match(html, /Bradbury contract live/);
-  assert.match(html, /0xBFB5/i);
+  assert.match(html, /0xc93f/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/);
 });

@@ -125,7 +125,7 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
   const [chainStats, setChainStats] = useState<ChainProtocolStats | null>(null);
   const [chainAvailable, setChainAvailable] = useState<boolean | null>(null);
   const [xProofOpen, setXProofOpen] = useState(false);
-  const [xProofMode, setXProofMode] = useState<"bind" | "replace">("bind");
+  const [xProofMode, setXProofMode] = useState<"bind" | "reverify">("bind");
   const [xProofUrl, setXProofUrl] = useState("");
 
   useEffect(() => {
@@ -234,10 +234,11 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
   const activeXHandle = chainProfile?.xHandle
     ? `@${chainProfile.xHandle}`
     : profile.handle;
+  const expectedChallengePurpose = xProofMode === "reverify" ? "REVERIFY" : "BIND";
   const proofChallenge =
-    xProofMode === "replace"
-      ? chainIdentity?.challenge || ""
-      : bindingChallenge?.challenge || "";
+    bindingChallenge?.active && bindingChallenge.purpose === expectedChallengePurpose
+      ? bindingChallenge.challenge
+      : "";
   const xPostIntent = proofChallenge
     ? `https://x.com/intent/post?text=${encodeURIComponent(proofChallenge)}`
     : "https://x.com/compose/post";
@@ -270,7 +271,7 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
       return;
     }
     if (!chainIdentity?.canClaim) {
-      setNotice("Your X verification is stale. Recheck it before making a new claim.");
+      setNotice("Your X verification is stale. Reverify your account before making a new claim.");
       return;
     }
     if (
@@ -315,8 +316,16 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
         if (!nextProfile.registered && nextChallenge.active) {
           setXProofMode("bind");
           setXProofOpen(true);
+        } else if (
+          nextProfile.registered &&
+          nextChallenge.active &&
+          nextChallenge.purpose === "REVERIFY"
+        ) {
+          setXProofMode("reverify");
+          setXProofOpen(true);
+          setNotice("Finish the fresh X proof to renew this account's verification.");
         } else if (nextIdentity.status === "STALE") {
-          setNotice("Wallet connected. Your monthly X verification needs a recheck.");
+          setNotice("Wallet connected. Your X account needs a fresh monthly verification.");
         }
       } else if (!chainProfile?.registered) {
         if (!bindingChallenge?.active) {
@@ -349,8 +358,8 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
     setWalletBusy(true);
     setNotice(null);
     try {
-      if (xProofMode === "replace") {
-        await wallet.replaceXProof(proofUrl.replace(/\/$/, ""));
+      if (xProofMode === "reverify") {
+        await wallet.verifyXReverification(proofUrl.replace(/\/$/, ""));
       } else {
         await wallet.verifyXBinding(proofUrl.replace(/\/$/, ""));
       }
@@ -358,8 +367,8 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
       setXProofOpen(false);
       setXProofUrl("");
       setNotice(
-        xProofMode === "replace"
-          ? `New proof accepted. @${nextProfile.xHandle} is verified for another 30 days.`
+        xProofMode === "reverify"
+          ? `Fresh proof accepted. @${nextProfile.xHandle} is verified for another 30 days.`
           : `@${nextProfile.xHandle} is bound to this wallet. Your 100 REP is ready.`,
       );
     } catch (error) {
@@ -373,33 +382,33 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
     }
   }
 
-  async function handleIdentityRefresh() {
+  async function handleIdentityReverification() {
     if (!wallet || walletBusy) return;
     setWalletBusy(true);
     setNotice(null);
     try {
-      await wallet.refreshXIdentity();
-      const { nextProfile } = await refreshWalletState(wallet.address);
-      setNotice(`@${nextProfile.xHandle} is verified for another 30 days.`);
+      let challenge = bindingChallenge;
+      if (!challenge?.active || challenge.purpose !== "REVERIFY") {
+        await wallet.beginXReverification();
+        const refreshed = await refreshWalletState(wallet.address);
+        challenge = refreshed.nextChallenge;
+      }
+      if (!challenge?.active || challenge.purpose !== "REVERIFY") {
+        throw new Error("Bradbury did not return a fresh X reverification challenge.");
+      }
+      setXProofMode("reverify");
+      setXProofUrl("");
+      setXProofOpen(true);
+      setNotice("Publish this fresh challenge from the same X account, then paste the new post URL.");
     } catch (error) {
       setNotice(
         error instanceof Error
-          ? `${error.message} If the old post was removed, publish the same challenge again and use “New proof”.`
-          : "The monthly X recheck did not complete.",
+          ? error.message
+          : "The monthly X reverification could not begin.",
       );
     } finally {
       setWalletBusy(false);
     }
-  }
-
-  function openReplacementProof() {
-    if (!chainIdentity?.challenge) {
-      setNotice("The original identity challenge is not available.");
-      return;
-    }
-    setXProofMode("replace");
-    setXProofUrl("");
-    setXProofOpen(true);
   }
 
   async function handleRecoveryAction() {
@@ -675,10 +684,10 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
                     <span className={`identity-state identity-state-${(chainIdentity?.status || "unbound").toLowerCase()}`}>
                       <i /> {chainIdentity?.status || "NOT CONNECTED"}
                     </span>
-                    {chainIdentity?.verifiedUntil ? <small>Recheck by {formatUnixDate(chainIdentity.verifiedUntil)}</small> : <small>One X account · one wallet</small>}
+                    {chainIdentity?.verifiedUntil ? <small>Reverify by {formatUnixDate(chainIdentity.verifiedUntil)}</small> : <small>One X account · one wallet</small>}
                   </div>
                   <strong>{chainIdentity?.bound ? `@${chainIdentity.handle}` : wallet ? "X proof required" : "Connect a wallet to begin"}</strong>
-                  <p>GenLayer reads a public challenge post and binds the X account’s stable ID. The same X account cannot activate another wallet.</p>
+                  <p>GenLayer binds the X account’s stable ID, then requires a fresh challenge post every 30 days to prove you still control it.</p>
                   <div className="identity-actions">
                     {!wallet || !chainProfile?.registered ? (
                       <button disabled={walletBusy} onClick={handleWalletAction} type="button">
@@ -686,10 +695,11 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
                       </button>
                     ) : (
                       <>
-                        {(chainIdentity?.refreshDue || chainIdentity?.status === "GRACE" || chainIdentity?.status === "STALE") && (
-                          <button disabled={walletBusy} onClick={handleIdentityRefresh} type="button">Recheck X</button>
+                        {(chainIdentity?.reverificationDue || chainIdentity?.reverificationPending || chainIdentity?.status === "GRACE" || chainIdentity?.status === "STALE") && (
+                          <button disabled={walletBusy} onClick={handleIdentityReverification} type="button">
+                            {chainIdentity?.reverificationPending || (bindingChallenge?.active && bindingChallenge.purpose === "REVERIFY") ? "Finish X reverification" : "Reverify X account"}
+                          </button>
                         )}
-                        <button className="identity-action-secondary" disabled={walletBusy} onClick={openReplacementProof} type="button">New proof</button>
                         {chainIdentity?.proofUrl && <a href={chainIdentity.proofUrl} rel="noreferrer" target="_blank">View proof ↗</a>}
                       </>
                     )}
@@ -733,7 +743,7 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
         <section className="how-section" id="how-it-works">
           <div className="how-heading"><span className="section-kicker">THE EXACT MECHANISM</span><h2>One claim.<br />Three outcomes.</h2></div>
           <div className="how-steps">
-            <article><span>01</span><BoltIcon /><h3>Verify one X account</h3><p>Post your wallet’s exact challenge. GenLayer binds that X identity once and unlocks 100 non-transferable REP.</p></article>
+            <article><span>01</span><BoltIcon /><h3>Verify one X account</h3><p>Post your wallet’s exact challenge to unlock 100 REP, then publish a fresh proof every 30 days to keep it verified.</p></article>
             <article><span>02</span><ChartIcon /><h3>Back your own claim</h3><p>Write a future statement, freeze its rule and source, then put at least one of your points behind it.</p></article>
             <article><span>03</span><ShieldIcon /><h3>GenLayer checks truth</h3><p>Independent validators resolve your statement TRUE, FALSE, or VOID from the approved evidence.</p></article>
             <article><span>04</span><TrophyIcon /><h3>Win beyond 100</h3><p>From 100, risking 1 ends at 101 if TRUE or 99 if FALSE. Below 20, recovery can rebuild only to 100.</p></article>
@@ -750,8 +760,12 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
           <section aria-labelledby="x-proof-title" aria-modal="true" className="forecast-modal x-proof-modal" role="dialog">
             <button aria-label="Close X verification" className="modal-close" disabled={walletBusy} onClick={() => setXProofOpen(false)} type="button">×</button>
             <div className="modal-kicker">ONE X ACCOUNT · ONE WALLET</div>
-            <h2 id="x-proof-title">{xProofMode === "replace" ? "Publish a new proof" : "Verify your X identity"}</h2>
-            <p className="modal-rules">Post this exact challenge by itself from the X account you want permanently attached to this wallet. Replies do not count.</p>
+            <h2 id="x-proof-title">{xProofMode === "reverify" ? "Reverify your X account" : "Verify your X identity"}</h2>
+            <p className="modal-rules">
+              {xProofMode === "reverify"
+                ? `Post this new challenge by itself from @${chainIdentity?.handle || "your bound account"}. The fresh post proves you still control the same X account.`
+                : "Post this exact challenge by itself from the X account you want permanently attached to this wallet. Replies do not count."}
+            </p>
             <div className="x-challenge-box">
               <span>EXACT POST TEXT</span>
               <code>{proofChallenge || "Create a challenge from your wallet first."}</code>
@@ -769,7 +783,7 @@ export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
               <small>GenLayer validators independently check the post, its author’s stable account ID, and the exact challenge.</small>
             </label>
             <button className="commit-button" disabled={walletBusy || !proofChallenge || !xProofUrl.trim()} onClick={submitXProof} type="button">
-              {walletBusy ? "GenLayer is checking X…" : xProofMode === "replace" ? "Verify new proof" : "Bind X and unlock 100 REP"}
+              {walletBusy ? "GenLayer is checking X…" : xProofMode === "reverify" ? "Complete X reverification" : "Bind X and unlock 100 REP"}
               {!walletBusy && <ShieldIcon />}
             </button>
           </section>

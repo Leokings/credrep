@@ -74,6 +74,34 @@ def complete_binding(
     return proof_url, challenge
 
 
+def complete_reverification(
+    contract,
+    vm,
+    account,
+    *,
+    identity_id="1234567890123456789",
+    handle="credence_user",
+    tweet_id="2042000000000000090",
+):
+    challenge = contract.get_binding_challenge(account)["challenge"]
+    proof_url = f"https://x.com/{handle}/status/{tweet_id}"
+    vm.mock_web(
+        rf".*status/{tweet_id}.*",
+        {
+            "status": 200,
+            "body": x_post_html(
+                tweet_id,
+                challenge,
+                identity_id,
+                handle,
+            ),
+        },
+    )
+    vm.sender = account
+    contract.verify_x_reverification(proof_url)
+    return proof_url, challenge
+
+
 def register(
     contract,
     vm,
@@ -262,7 +290,47 @@ def test_identity_has_verified_grace_and_stale_windows(
         )
 
 
-def test_monthly_refresh_rechecks_the_same_x_account(
+def test_monthly_reverification_requires_a_fresh_post_from_the_same_x_account(
+    credence, direct_vm, direct_alice
+):
+    original_proof, original_challenge = register(
+        credence, direct_vm, direct_alice
+    )
+
+    direct_vm.warp("2026-09-05T11:59:59+00:00")
+    direct_vm.sender = direct_alice
+    with direct_vm.expect_revert("x_reverification_not_due"):
+        credence.begin_x_reverification()
+
+    direct_vm.warp("2026-09-05T12:00:00+00:00")
+    credence.begin_x_reverification()
+    pending = credence.get_binding_challenge(direct_alice)
+    assert pending["active"] is True
+    assert pending["purpose"] == "REVERIFY"
+    assert pending["challenge"].startswith("credence-reverify:")
+    assert pending["challenge"] != original_challenge
+
+    with direct_vm.expect_revert("x_challenge_missing"):
+        credence.verify_x_reverification(original_proof)
+
+    fresh_proof, fresh_challenge = complete_reverification(
+        credence,
+        direct_vm,
+        direct_alice,
+        handle="credence_new",
+        tweet_id="2042000000000000091",
+    )
+    refreshed = credence.get_identity_status(direct_alice)
+    assert refreshed["status"] == "VERIFIED"
+    assert refreshed["identity_id"] == "1234567890123456789"
+    assert refreshed["handle"] == "credence_new"
+    assert refreshed["proof_url"] == fresh_proof
+    assert refreshed["challenge"] == fresh_challenge
+    assert refreshed["reverification_pending"] is False
+    assert refreshed["verified_at"] == unix("2026-09-05T12:00:00+00:00")
+
+
+def test_monthly_reverification_rejects_a_different_x_account(
     credence, direct_vm, direct_alice
 ):
     register(credence, direct_vm, direct_alice)
@@ -270,10 +338,20 @@ def test_monthly_refresh_rechecks_the_same_x_account(
     assert credence.get_identity_status(direct_alice)["status"] == "STALE"
 
     direct_vm.sender = direct_alice
-    credence.refresh_x_identity(direct_alice)
-    refreshed = credence.get_identity_status(direct_alice)
-    assert refreshed["status"] == "VERIFIED"
-    assert refreshed["verified_at"] == unix("2026-09-20T12:00:01+00:00")
+    credence.begin_x_reverification()
+    with direct_vm.expect_revert("x_identity_changed"):
+        complete_reverification(
+            credence,
+            direct_vm,
+            direct_alice,
+            identity_id="9999999999999999999",
+            handle="impostor",
+            tweet_id="2042000000000000092",
+        )
+
+    stale = credence.get_identity_status(direct_alice)
+    assert stale["status"] == "STALE"
+    assert stale["reverification_pending"] is True
 
 
 def test_claim_has_one_owner_and_one_personal_stake(
