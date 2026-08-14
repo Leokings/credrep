@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.gltest_windows_compat import install_windows_direct_compatibility
+from tests.gltest_windows_compat import install_direct_compatibility
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -12,7 +12,7 @@ START_TIME = "2026-08-13T12:00:00+00:00"
 RESOLUTION_TIME = 1_786_665_600
 
 
-install_windows_direct_compatibility()
+install_direct_compatibility()
 
 
 @pytest.fixture

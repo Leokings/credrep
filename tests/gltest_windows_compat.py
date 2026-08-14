@@ -1,4 +1,4 @@
-"""Windows-only compatibility patches for gltest 0.29.2 direct execution."""
+"""Compatibility patches for gltest 0.29.2 direct execution."""
 
 from __future__ import annotations
 
@@ -7,12 +7,28 @@ import sys
 import tempfile
 
 
-def install_windows_direct_compatibility() -> None:
+def install_direct_compatibility() -> None:
+    from gltest.direct.vm import VMContext
+
+    if not getattr(VMContext, "_credence_datetime_compat", False):
+        original_refresh = VMContext._refresh_gl_message
+
+        def refresh_gl_message(vm):
+            original_refresh(vm)
+            gl_module = sys.modules.get("genlayer.gl")
+            if (
+                gl_module is not None
+                and getattr(gl_module, "message_raw", None) is not None
+            ):
+                gl_module.message_raw["datetime"] = vm._datetime
+
+        VMContext._refresh_gl_message = refresh_gl_message
+        VMContext._credence_datetime_compat = True
+
     if sys.platform != "win32":
         return
 
     from gltest.direct import loader
-    from gltest.direct.vm import VMContext
 
     if getattr(loader, "_credence_windows_compat", False):
         return
@@ -58,16 +74,6 @@ def install_windows_direct_compatibility() -> None:
             os.close(fd)
 
     original_cleanup = VMContext._cleanup_after_deactivate
-    original_refresh = VMContext._refresh_gl_message
-
-    def refresh_gl_message(vm):
-        original_refresh(vm)
-        gl_module = sys.modules.get("genlayer.gl")
-        if (
-            gl_module is not None
-            and getattr(gl_module, "message_raw", None) is not None
-        ):
-            gl_module.message_raw["datetime"] = vm._datetime
 
     def cleanup_after_deactivate(vm):
         path = getattr(vm, "_credence_stdin_path", None)
@@ -82,6 +88,5 @@ def install_windows_direct_compatibility() -> None:
                 vm._credence_stdin_path = None
 
     loader._inject_message_to_fd0 = inject_message_to_fd0
-    VMContext._refresh_gl_message = refresh_gl_message
     VMContext._cleanup_after_deactivate = cleanup_after_deactivate
     loader._credence_windows_compat = True
