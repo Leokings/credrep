@@ -7,34 +7,10 @@ import {
   ExecutionResult,
   TransactionStatus,
 } from "genlayer-js/types";
-import type { ClaimInput, ClaimOutcome, ClaimStatus } from "./product-data";
 import { CREDENCE_CONTRACT_ADDRESS } from "./deployment";
 
 type BrowserProvider = {
   request(args: { method: string; params?: unknown[] | object }): Promise<unknown>;
-};
-
-export type ChainProfile = {
-  registered: boolean;
-  reputation: number;
-  availableReputation: number;
-  reputationAtRisk: number;
-  claimsMade: number;
-  openClaims: number;
-  resolvedClaims: number;
-  correctClaims: number;
-  voidClaims: number;
-  accuracyBps: number;
-  xIdentityBound: boolean;
-  xIdentityId: string;
-  xHandle: string;
-  xIdentityStatus: IdentityStatus;
-  xVerifiedAt: number;
-  xVerifiedUntil: number;
-  recoveryActive: boolean;
-  recoveryNextAt: number;
-  recoverableReputation: number;
-  recoveredReputation: number;
 };
 
 export type IdentityStatus =
@@ -43,6 +19,27 @@ export type IdentityStatus =
   | "VERIFIED"
   | "GRACE"
   | "STALE";
+
+export type ChainProfile = {
+  registered: boolean;
+  reputation: number;
+  availableReputation: number;
+  reputationAtRisk: number;
+  predictionsMade: number;
+  openPredictions: number;
+  resolvedPredictions: number;
+  correctPredictions: number;
+  voidPredictions: number;
+  accuracyBps: number;
+  predictionScoreBps: number;
+  xIdentityBound: boolean;
+  xHandle: string;
+  xIdentityStatus: IdentityStatus;
+  xVerifiedUntil: number;
+  recoveryActive: boolean;
+  recoveryNextAt: number;
+  recoverableReputation: number;
+};
 
 export type BindingChallenge = {
   challenge: string;
@@ -58,43 +55,46 @@ export type ChainIdentity = {
   handle: string;
   identityId: string;
   proofUrl: string;
-  challenge: string;
   verifiedAt: number;
   verifiedUntil: number;
   graceUntil: number;
   reverificationDue: boolean;
   reverificationPending: boolean;
-  canClaim: boolean;
+  canPredict: boolean;
 };
 
 export type ChainProtocolStats = {
   users: number;
-  claims: number;
+  markets: number;
+  predictions: number;
   startingReputation: number;
   maxStakeBps: number;
-  totalBonusMinted: number;
-  totalReputationBurned: number;
-  totalReputationRecovered: number;
-  recoveryTriggerBelow: number;
-  recoveryTarget: number;
-  xVerificationValiditySeconds: number;
-  xVerificationGraceSeconds: number;
-  xReverificationWindowSeconds: number;
 };
 
-export type ChainClaim = {
+export type ChainMarket = {
   id: string;
-  owner: `0x${string}`;
-  statement: string;
-  category: string;
-  resolutionRules: string;
-  sources: string[];
-  resolveTimeUnix: number;
+  question: string;
+  description: string;
+  slug: string;
+  sourceUrl: string;
+  endTimeUnix: number;
+  status: "OPEN" | "RESOLVED" | "VOID";
+  outcome: "YES" | "NO" | "VOID" | "";
+  predictionCount: number;
+  totalReputationStaked: number;
+};
+
+export type ChainPosition = {
+  exists: boolean;
+  marketId: string;
+  prediction: "YES" | "NO";
+  confidenceBps: number;
   stake: number;
-  status: ClaimStatus;
-  outcome: ClaimOutcome | null;
+  status: "OPEN" | "WON" | "LOST" | "VOID";
+  scoreBps: number;
   createdAt: string;
-  resolvedAt: string;
+  settledAt: string;
+  market: ChainMarket;
 };
 
 export type ConnectedCredenceWallet = {
@@ -105,10 +105,14 @@ export type ConnectedCredenceWallet = {
   verifyXReverification(proofUrl: string): Promise<`0x${string}`>;
   startRecovery(): Promise<`0x${string}`>;
   claimRecovery(): Promise<`0x${string}`>;
-  makeClaim(input: ClaimInput): Promise<{
-    claimId: string;
-    transactionHash: `0x${string}`;
-  }>;
+  makePrediction(input: {
+    marketId: string;
+    prediction: "YES" | "NO";
+    confidenceBps: number;
+    stake: number;
+  }): Promise<`0x${string}`>;
+  resolveMarket(marketId: string): Promise<`0x${string}`>;
+  settlePrediction(marketId: string): Promise<`0x${string}`>;
 };
 
 const readClient = createClient({ chain: testnetBradbury });
@@ -121,9 +125,9 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function asNumber(value: unknown): number {
-  const number = typeof value === "bigint" ? Number(value) : Number(value);
+  const number = Number(value);
   if (!Number.isSafeInteger(number) || number < 0) {
-    throw new Error("Bradbury returned an invalid reputation value.");
+    throw new Error("Bradbury returned an invalid numeric value.");
   }
   return number;
 }
@@ -137,18 +141,19 @@ function toCalldataAddress(address: string) {
   if (!/^[0-9a-f]{40}$/.test(hex)) {
     throw new Error("The connected wallet returned an invalid address.");
   }
-  const bytes = Uint8Array.from(
-    hex.match(/.{2}/g)!.map((pair) => Number.parseInt(pair, 16)),
+  return new CalldataAddress(
+    Uint8Array.from(
+      hex.match(/.{2}/g)!.map((pair) => Number.parseInt(pair, 16)),
+    ),
   );
-  return new CalldataAddress(bytes);
 }
 
 function assertSuccessfulExecution(receipt: { txExecutionResultName?: string }) {
   if (receipt.txExecutionResultName !== ExecutionResult.FINISHED_WITH_RETURN) {
     throw new Error(
       receipt.txExecutionResultName === ExecutionResult.FINISHED_WITH_ERROR
-        ? "The contract rejected this transaction. Your reputation was not changed."
-        : "Validator consensus completed without a successful contract execution.",
+        ? "The contract rejected this transaction. No reputation changed."
+        : "Validator consensus did not finish successfully.",
     );
   }
 }
@@ -176,22 +181,20 @@ export async function readChainProfile(address: string): Promise<ChainProfile> {
     reputation: asNumber(raw.reputation),
     availableReputation: asNumber(raw.available_reputation),
     reputationAtRisk: asNumber(raw.reputation_at_risk),
-    claimsMade: asNumber(raw.claims_made),
-    openClaims: asNumber(raw.open_claims),
-    resolvedClaims: asNumber(raw.resolved_claims),
-    correctClaims: asNumber(raw.correct_claims),
-    voidClaims: asNumber(raw.void_claims),
+    predictionsMade: asNumber(raw.predictions_made),
+    openPredictions: asNumber(raw.open_predictions),
+    resolvedPredictions: asNumber(raw.resolved_predictions),
+    correctPredictions: asNumber(raw.correct_predictions),
+    voidPredictions: asNumber(raw.void_predictions),
     accuracyBps: asNumber(raw.accuracy_bps),
+    predictionScoreBps: asNumber(raw.prediction_score_bps),
     xIdentityBound: Boolean(raw.x_identity_bound),
-    xIdentityId: asString(raw.x_identity_id),
     xHandle: asString(raw.x_handle),
     xIdentityStatus: asString(raw.x_identity_status) as IdentityStatus,
-    xVerifiedAt: asNumber(raw.x_verified_at),
     xVerifiedUntil: asNumber(raw.x_verified_until),
     recoveryActive: Boolean(raw.recovery_active),
     recoveryNextAt: asNumber(raw.recovery_next_at),
     recoverableReputation: asNumber(raw.recoverable_reputation),
-    recoveredReputation: asNumber(raw.recovered_reputation),
   };
 }
 
@@ -214,9 +217,7 @@ export async function readBindingChallenge(
   };
 }
 
-export async function readChainIdentity(
-  address: string,
-): Promise<ChainIdentity> {
+export async function readChainIdentity(address: string): Promise<ChainIdentity> {
   const raw = asRecord(
     await readClient.readContract({
       address: CREDENCE_CONTRACT_ADDRESS,
@@ -230,13 +231,12 @@ export async function readChainIdentity(
     handle: asString(raw.handle),
     identityId: asString(raw.identity_id),
     proofUrl: asString(raw.proof_url),
-    challenge: asString(raw.challenge),
     verifiedAt: asNumber(raw.verified_at),
     verifiedUntil: asNumber(raw.verified_until),
     graceUntil: asNumber(raw.grace_until),
     reverificationDue: Boolean(raw.reverification_due),
     reverificationPending: Boolean(raw.reverification_pending),
-    canClaim: Boolean(raw.can_claim),
+    canPredict: Boolean(raw.can_predict),
   };
 }
 
@@ -249,86 +249,80 @@ export async function readProtocolStats(): Promise<ChainProtocolStats> {
   );
   return {
     users: asNumber(raw.users),
-    claims: asNumber(raw.claims),
+    markets: asNumber(raw.markets),
+    predictions: asNumber(raw.predictions),
     startingReputation: asNumber(raw.starting_reputation),
     maxStakeBps: asNumber(raw.max_stake_bps),
-    totalBonusMinted: asNumber(raw.total_bonus_minted),
-    totalReputationBurned: asNumber(raw.total_reputation_burned),
-    totalReputationRecovered: asNumber(raw.total_reputation_recovered),
-    recoveryTriggerBelow: asNumber(raw.recovery_trigger_below),
-    recoveryTarget: asNumber(raw.recovery_target),
-    xVerificationValiditySeconds: asNumber(
-      raw.x_verification_validity_seconds,
-    ),
-    xVerificationGraceSeconds: asNumber(
-      raw.x_verification_grace_seconds,
-    ),
-    xReverificationWindowSeconds: asNumber(
-      raw.x_reverification_window_seconds,
-    ),
   };
 }
 
-export async function readChainClaims(limit = 100): Promise<ChainClaim[]> {
-  const stats = await readProtocolStats();
-  const count = Math.min(limit, stats.claims);
-  if (count === 0) return [];
-
-  const rawIds = await readClient.readContract({
-    address: CREDENCE_CONTRACT_ADDRESS,
-    functionName: "get_claim_ids",
-    args: [BigInt(Math.max(0, stats.claims - count)), BigInt(count)],
-  });
-  if (!Array.isArray(rawIds)) {
-    throw new Error("Bradbury returned an invalid claim index.");
-  }
-
-  const claims = await Promise.all(
-    rawIds.map(async (rawId) => {
-      const id = asString(rawId);
-      const raw = asRecord(
-        await readClient.readContract({
-          address: CREDENCE_CONTRACT_ADDRESS,
-          functionName: "get_claim",
-          args: [id],
-        }),
-      );
-      const status = asString(raw.status) as ClaimStatus;
-      const outcomeValue = asString(raw.outcome);
-      return {
-        id,
-        owner: asString(raw.owner) as `0x${string}`,
-        statement: asString(raw.statement),
-        category: asString(raw.category),
-        resolutionRules: asString(raw.resolution_rules),
-        sources: Array.isArray(raw.sources)
-          ? raw.sources.map((source) => asString(source)).filter(Boolean)
-          : [],
-        resolveTimeUnix: asNumber(raw.resolve_time_unix),
-        stake: asNumber(raw.stake),
-        status,
-        outcome: outcomeValue ? (outcomeValue as ClaimOutcome) : null,
-        createdAt: asString(raw.created_at),
-        resolvedAt: asString(raw.resolved_at),
-      } satisfies ChainClaim;
+export async function readChainMarket(marketId: string): Promise<ChainMarket> {
+  const raw = asRecord(
+    await readClient.readContract({
+      address: CREDENCE_CONTRACT_ADDRESS,
+      functionName: "get_market",
+      args: [marketId],
     }),
   );
-  return claims.reverse();
+  return {
+    id: asString(raw.id),
+    question: asString(raw.question),
+    description: asString(raw.description),
+    slug: asString(raw.slug),
+    sourceUrl: asString(raw.source_url),
+    endTimeUnix: asNumber(raw.end_time_unix),
+    status: asString(raw.status) as ChainMarket["status"],
+    outcome: asString(raw.outcome) as ChainMarket["outcome"],
+    predictionCount: asNumber(raw.prediction_count),
+    totalReputationStaked: asNumber(raw.total_reputation_staked),
+  };
+}
+
+export async function readUserPositions(
+  address: string,
+  count: number,
+): Promise<ChainPosition[]> {
+  if (!count) return [];
+  const rawIds = await readClient.readContract({
+    address: CREDENCE_CONTRACT_ADDRESS,
+    functionName: "get_user_position_ids",
+    args: [toCalldataAddress(address), 0n, BigInt(Math.min(count, 100))],
+  });
+  if (!Array.isArray(rawIds)) throw new Error("Bradbury returned an invalid position index.");
+
+  const positions = await Promise.all(
+    rawIds.map(async (value) => {
+      const marketId = asString(value);
+      const [positionRaw, market] = await Promise.all([
+        readClient.readContract({
+          address: CREDENCE_CONTRACT_ADDRESS,
+          functionName: "get_position",
+          args: [toCalldataAddress(address), marketId],
+        }),
+        readChainMarket(marketId),
+      ]);
+      const raw = asRecord(positionRaw);
+      return {
+        exists: Boolean(raw.exists),
+        marketId,
+        prediction: asString(raw.prediction) as ChainPosition["prediction"],
+        confidenceBps: asNumber(raw.confidence_bps),
+        stake: asNumber(raw.stake),
+        status: asString(raw.status) as ChainPosition["status"],
+        scoreBps: asNumber(raw.score_bps),
+        createdAt: asString(raw.created_at),
+        settledAt: asString(raw.settled_at),
+        market,
+      } satisfies ChainPosition;
+    }),
+  );
+  return positions.reverse();
 }
 
 function ethereumProvider(): BrowserProvider {
-  const provider = (window as typeof window & { ethereum?: BrowserProvider })
-    .ethereum;
-  if (!provider) {
-    throw new Error(
-      "MetaMask is required to sign a personal reputation claim on Bradbury.",
-    );
-  }
+  const provider = (window as typeof window & { ethereum?: BrowserProvider }).ethereum;
+  if (!provider) throw new Error("Install MetaMask to connect a Bradbury wallet.");
   return provider;
-}
-
-function makeClaimId(address: string) {
-  return `c-${address.slice(2, 10).toLowerCase()}-${Date.now().toString(36)}`;
 }
 
 export async function connectCredenceWallet(): Promise<ConnectedCredenceWallet> {
@@ -363,42 +357,21 @@ export async function connectCredenceWallet(): Promise<ConnectedCredenceWallet> 
 
   return {
     address,
-    beginXBinding() {
-      return write("begin_x_binding");
-    },
-    verifyXBinding(proofUrl) {
-      return write("verify_x_binding", [proofUrl]);
-    },
-    beginXReverification() {
-      return write("begin_x_reverification");
-    },
-    verifyXReverification(proofUrl) {
-      return write("verify_x_reverification", [proofUrl]);
-    },
-    startRecovery() {
-      return write("start_recovery");
-    },
-    claimRecovery() {
-      return write("claim_recovery");
-    },
-    async makeClaim(input) {
-      const claimId = makeClaimId(address);
-      const transactionHash = (await writeClient.writeContract({
-        address: CREDENCE_CONTRACT_ADDRESS,
-        functionName: "make_claim",
-        args: [
-          claimId,
-          input.statement,
-          input.category,
-          input.rules,
-          JSON.stringify([input.sourceUrl]),
-          BigInt(Math.floor(new Date(input.resolutionAt).getTime() / 1_000)),
-          BigInt(input.stake),
-        ],
-        value: 0n,
-      })) as `0x${string}`;
-      await waitForAccepted(transactionHash);
-      return { claimId, transactionHash };
-    },
+    beginXBinding: () => write("begin_x_binding"),
+    verifyXBinding: (proofUrl) => write("verify_x_binding", [proofUrl]),
+    beginXReverification: () => write("begin_x_reverification"),
+    verifyXReverification: (proofUrl) =>
+      write("verify_x_reverification", [proofUrl]),
+    startRecovery: () => write("start_recovery"),
+    claimRecovery: () => write("claim_recovery"),
+    makePrediction: ({ marketId, prediction, confidenceBps, stake }) =>
+      write("make_prediction", [
+        marketId,
+        prediction,
+        BigInt(confidenceBps),
+        BigInt(stake),
+      ]),
+    resolveMarket: (marketId) => write("resolve_market", [marketId]),
+    settlePrediction: (marketId) => write("settle_prediction", [marketId]),
   };
 }

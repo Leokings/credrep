@@ -1,38 +1,33 @@
 # Credence
 
-Credence lets one person put their own reputation behind a public future claim.
-One public X account binds to one wallet through GenLayer verification, then
-starts with 100 non-transferable REP. There is no betting pool, counterparty,
-liquidity, odds, or token purchase.
+Credence turns live public questions into personal, reputation-backed forecasts.
+The site sources active binary questions from Polymarket; users choose YES or
+NO and stake only their own non-transferable REP. There is no money, liquidity,
+counterparty, or payout pool in Credence.
 
-- TRUE returns twice the stake, for a net gain equal to the stake.
-- FALSE returns nothing and permanently burns the stake.
-- VOID refunds the original stake.
-- Below 20 REP, a claim-free account can recover 1 REP per day after a 7-day
-  cooldown, up to 100. Only a correct claim can move it above 100.
+- A verified X account starts with 100 REP.
+- Correct: return the stake plus an equal REP bonus.
+- Wrong: permanently burn the stake.
+- Void: refund the stake.
+- Prediction Score averages a Brier-style calibration score using each stated
+  confidence, while accuracy is tracked separately.
+- Below 20 REP, an account with no open position can slowly recover to 100.
 
-The web app provides ChatGPT sign-in, persistent D1 claim records, public claim
-discovery, personal records, and a reputation leaderboard. The GenLayer
-contract owns the authoritative claim, evidence, resolution, and settlement
-state.
+The public feed is a cached browsing index. GenLayer validators independently
+fetch the selected Polymarket market before accepting a forecast and again when
+resolving it. The contract is authoritative for identity, REP, positions,
+scores, and settlement.
 
-## Bradbury deployment
+## Bradbury
 
-- Network: GenLayer Bradbury Testnet (chain ID 4221)
-- Contract v3: `0xc93f6BcfF7Dd1c6012D9Cb9908682a70E044F742`
-- Deployment transaction: `0xae5d4da56eb1a1b473348a59c80643ec237984b6addcc9c4f3074649635cd678`
-- Immutable v2: `0xBFB5C69e93217f3f6AF944225606b9BC60923277`
-- Immutable v1: `0x164868c406fe6cFB4a70F93bAE9e3246b5873D34`
+- Chain ID: `4221`
+- Contract: `0x2d93e493144A0e0f1dc6E4803e15c21EAb219072`
+- Deployment transaction: `0x09214ecfd8e0e19135a55d8cfd477361196ebec7acbe76e1a11f877e1befa36f`
 
-The website reads the deployed contract publicly. A signed-in person connects
-their own MetaMask wallet, posts its exact challenge from X, and submits the
-public post URL. GenLayer binds the stable X account ID, activates 100 REP, and
-requires a brand-new challenge post from that same X account every 30 days
-(with a 7-day grace period). Reusing the original proof does not renew the
-account. The
-dedicated deployment key is never sent to the website or committed here.
+The deployer is a dedicated Credence wallet. Product users connect and sign
+with their own wallets; the site never receives the deployer key.
 
-## Local website
+## Local development
 
 ```bash
 npm install
@@ -43,8 +38,10 @@ npm run dev
 
 ```bash
 npm test
+npm run lint
 genvm-lint check contracts/credence_claims.py
 pytest tests/direct -q
+gltest tests/integration/test_credence_forecasts.py -v -s --network studionet
 ```
 
-See `ARCHITECTURE.md` for the contract boundary and exact settlement invariant.
+See `ARCHITECTURE.md` for the trust and settlement boundaries.

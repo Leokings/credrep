@@ -32,18 +32,18 @@ export async function generateMetadata(): Promise<Metadata> {
   const socialImage = `${protocol}://${host}/og-v2.png`;
 
   return {
-    title: "Credence — Put your reputation behind your word",
+    title: "Credence — Forecast with reputation",
     description:
-      "Bind one X account to one wallet, reverify it with a fresh monthly proof, and risk your own non-transferable reputation on public claims.",
+      "Back live public questions with your own non-transferable reputation and build a calibration-aware prediction score.",
     openGraph: {
-      title: "Credence — Put your reputation behind your word",
-      description: "One X account. One wallet. Your word, backed by reputation.",
+      title: "Credence — Forecast with reputation",
+      description: "Live questions. Your REP. Your prediction record.",
       images: [{ url: socialImage, width: 1200, height: 630 }],
     },
     twitter: {
       card: "summary_large_image",
-      title: "Credence — Put your reputation behind your word",
-      description: "One X account. One wallet. Your word, backed by reputation.",
+      title: "Credence — Forecast with reputation",
+      description: "Live questions. Your REP. Your prediction record.",
       images: [socialImage],
     },
     icons: {

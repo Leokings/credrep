@@ -128,3 +128,24 @@ export const topicRatings = sqliteTable(
     index("idx_topic_ratings_category_rating").on(table.category, table.rating),
   ],
 );
+
+export const sourcedMarkets = sqliteTable(
+  "sourced_markets",
+  {
+    id: text("id").primaryKey(),
+    slug: text("slug").notNull(),
+    question: text("question").notNull(),
+    description: text("description").notNull(),
+    category: text("category").notNull(),
+    status: text("status").notNull().default("OPEN"),
+    endAt: text("end_at").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    volume24hr: integer("volume_24hr").notNull().default(0),
+    fetchedAt: text("fetched_at").notNull(),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("idx_sourced_markets_status_end").on(table.status, table.endAt),
+    index("idx_sourced_markets_volume").on(table.volume24hr),
+  ],
+);

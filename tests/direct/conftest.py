@@ -25,21 +25,3 @@ def credence(direct_vm, direct_deploy, direct_owner):
         2_000,
         sdk_version=SDK_VERSION,
     )
-
-
-def make_claim(
-    contract,
-    claim_id="fed-september-cut",
-    stake=1,
-    resolve_time=RESOLUTION_TIME,
-):
-    contract.make_claim(
-        claim_id,
-        "The Federal Reserve will cut its target range at its September meeting.",
-        "economy",
-        "TRUE requires either bound of the announced target range to be lower than immediately before the meeting.",
-        '["https://example.com/fed-statement"]',
-        resolve_time,
-        stake,
-    )
-    return claim_id

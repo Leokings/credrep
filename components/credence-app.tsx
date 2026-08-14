@@ -1,17 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { AppState, Claim, ClaimInput } from "../lib/product-data";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { MarketCategory, MarketFeed, SourcedMarket, Viewer } from "../lib/product-data";
 import {
   connectCredenceWallet,
   readBindingChallenge,
-  readChainClaims,
   readChainIdentity,
   readChainProfile,
   readProtocolStats,
+  readUserPositions,
   type BindingChallenge,
-  type ChainClaim,
   type ChainIdentity,
+  type ChainPosition,
   type ChainProfile,
   type ChainProtocolStats,
   type ConnectedCredenceWallet,
@@ -22,775 +22,496 @@ import {
   CREDENCE_CONTRACT_ADDRESS,
   shortAddress,
 } from "../lib/deployment";
-import { ClaimCard } from "./claim-card";
-import { ClaimModal } from "./claim-modal";
-import {
-  BoltIcon,
-  ChartIcon,
-  ChevronIcon,
-  CompassIcon,
-  MarkIcon,
-  SearchIcon,
-  ShieldIcon,
-  TrophyIcon,
-  UserIcon,
-} from "./icons";
+import { ClockIcon, CloseIcon, MarkIcon, SearchIcon, ShieldIcon } from "./icons";
 
 type Props = {
-  initialState: AppState;
+  viewer: Viewer;
   signedIn: boolean;
   signInPath: string;
 };
 
-const CATEGORIES = ["All claims", "Football", "Technology", "Economy", "Crypto"];
+type Notice = { tone: "good" | "bad" | "plain"; text: string };
+type View = "feed" | "record";
 
-function initials(name: string) {
-  return name
-    .split(" ")
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
+const CATEGORIES: Array<"All" | MarketCategory> = [
+  "All",
+  "Politics",
+  "Economy",
+  "Sports",
+  "Crypto",
+  "Technology",
+  "Science",
+  "Culture",
+  "World",
+  "Other",
+];
 
-function accuracy(correct: number, resolved: number) {
-  return resolved ? Math.round((correct / resolved) * 100) : null;
-}
-
-function titleCase(value: string) {
-  return value.replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-function sourceLabel(url: string) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return "Frozen source";
-  }
-}
-
-function formatUnixDate(value: number) {
-  if (!value) return "Not scheduled";
+function formatDate(value: string | number) {
+  const date = typeof value === "number" ? new Date(value * 1_000) : new Date(value);
+  if (Number.isNaN(date.getTime())) return "Date unavailable";
   return new Intl.DateTimeFormat("en", {
     month: "short",
     day: "numeric",
-    year: "numeric",
-  }).format(new Date(value * 1_000));
+    year: date.getFullYear() === new Date().getFullYear() ? undefined : "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
 }
 
-function productClaim(
-  claim: ChainClaim,
-  walletAddress?: string,
-  displayName?: string,
-  handle?: string,
-): Claim {
-  const isOwner =
-    Boolean(walletAddress) &&
-    claim.owner.toLowerCase() === walletAddress?.toLowerCase();
-  const firstSource = claim.sources[0] || BRADBURY_EXPLORER_URL;
-  return {
-    id: `chain-${claim.id}`,
-    contractClaimId: claim.id,
-    ownerAddress: claim.owner,
-    ownerId: claim.owner.toLowerCase(),
-    ownerName: isOwner && displayName ? displayName : shortAddress(claim.owner),
-    ownerHandle: isOwner && handle ? handle : `@${claim.owner.slice(2, 10)}`,
-    statement: claim.statement,
-    category: titleCase(claim.category),
-    status: claim.status,
-    stake: claim.stake,
-    resolutionAt: new Date(claim.resolveTimeUnix * 1_000).toISOString(),
-    sourceLabel: sourceLabel(firstSource),
-    sourceUrl: firstSource,
-    rules: claim.resolutionRules,
-    createdAt: claim.createdAt,
-    outcome: claim.outcome,
-  };
+function percent(bps: number, empty = "—") {
+  return bps ? `${(bps / 100).toFixed(bps % 100 ? 1 : 0)}%` : empty;
 }
 
-export function CredenceApp({ initialState, signedIn, signInPath }: Props) {
-  const [state, setState] = useState(initialState);
-  const [activeCategory, setActiveCategory] = useState("All claims");
+function statusLabel(status: string) {
+  if (status === "WON") return "Correct";
+  if (status === "LOST") return "Wrong";
+  if (status === "VOID") return "Void";
+  return "Open";
+}
+
+function MarketCard({
+  market,
+  position,
+  onChoose,
+}: {
+  market: SourcedMarket;
+  position?: ChainPosition;
+  onChoose: (market: SourcedMarket, prediction: "YES" | "NO") => void;
+}) {
+  return (
+    <article className="market-card">
+      <div className="market-meta">
+        <span>{market.category}</span>
+        <span className="market-time"><ClockIcon /> {formatDate(market.endAt)}</span>
+      </div>
+      <h3>{market.question}</h3>
+      <a className="source-link" href={market.sourceUrl} target="_blank" rel="noreferrer">
+        Polymarket source ↗
+      </a>
+      {position ? (
+        <div className="position-stamp">
+          <strong>{position.prediction}</strong>
+          <span>{Math.round(position.confidenceBps / 100)}% · {position.stake} REP</span>
+        </div>
+      ) : (
+        <div className="choice-row">
+          <button className="choice yes" onClick={() => onChoose(market, "YES")}>YES</button>
+          <button className="choice no" onClick={() => onChoose(market, "NO")}>NO</button>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+export function CredenceApp({ viewer, signedIn, signInPath }: Props) {
+  const [feed, setFeed] = useState<MarketFeed | null>(null);
+  const [feedError, setFeedError] = useState("");
   const [query, setQuery] = useState("");
-  const [composerOpen, setComposerOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [showAll, setShowAll] = useState(false);
+  const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("All");
+  const [view, setView] = useState<View>("feed");
   const [wallet, setWallet] = useState<ConnectedCredenceWallet | null>(null);
-  const [walletBusy, setWalletBusy] = useState(false);
-  const [chainProfile, setChainProfile] = useState<ChainProfile | null>(null);
-  const [chainIdentity, setChainIdentity] = useState<ChainIdentity | null>(null);
-  const [bindingChallenge, setBindingChallenge] = useState<BindingChallenge | null>(null);
-  const [chainClaims, setChainClaims] = useState<Claim[]>([]);
-  const [chainStats, setChainStats] = useState<ChainProtocolStats | null>(null);
-  const [chainAvailable, setChainAvailable] = useState<boolean | null>(null);
-  const [xProofOpen, setXProofOpen] = useState(false);
-  const [xProofMode, setXProofMode] = useState<"bind" | "reverify">("bind");
-  const [xProofUrl, setXProofUrl] = useState("");
+  const [profile, setProfile] = useState<ChainProfile | null>(null);
+  const [identity, setIdentity] = useState<ChainIdentity | null>(null);
+  const [challenge, setChallenge] = useState<BindingChallenge | null>(null);
+  const [positions, setPositions] = useState<ChainPosition[]>([]);
+  const [protocol, setProtocol] = useState<ChainProtocolStats | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [busy, setBusy] = useState("");
+  const [selectedMarket, setSelectedMarket] = useState<SourcedMarket | null>(null);
+  const [selection, setSelection] = useState<"YES" | "NO">("YES");
+  const [confidence, setConfidence] = useState(70);
+  const [stake, setStake] = useState(1);
+  const [identityOpen, setIdentityOpen] = useState(false);
+  const [proofUrl, setProofUrl] = useState("");
 
   useEffect(() => {
-    if (!signedIn) return;
-    let cancelled = false;
-    fetch("/api/state", { headers: { accept: "application/json" } })
+    const controller = new AbortController();
+    fetch("/api/markets", {
+      headers: { accept: "application/json" },
+      signal: controller.signal,
+    })
       .then(async (response) => {
-        if (!response.ok) throw new Error("Unable to load your reputation ledger.");
-        return (await response.json()) as AppState;
+        const body = (await response.json()) as MarketFeed & { error?: string };
+        if (!response.ok) throw new Error(body.error || "Market feed unavailable.");
+        return body;
       })
-      .then((nextState) => !cancelled && setState(nextState))
-      .catch(() => {
-        if (!cancelled) setNotice("The saved ledger is warming up. You can still explore the preview.");
+      .then(setFeed)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setFeedError(error instanceof Error ? error.message : "Market feed unavailable.");
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [signedIn]);
-
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([readProtocolStats(), readChainClaims()])
-      .then(([stats, claims]) => {
-        if (cancelled) return;
-        setChainStats(stats);
-        setChainClaims(claims.map((claim) => productClaim(claim)));
-        setChainAvailable(true);
-      })
-      .catch(() => {
-        if (!cancelled) setChainAvailable(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+    readProtocolStats().then(setProtocol).catch(() => setProtocol(null));
+    return () => controller.abort();
   }, []);
 
-  const profile = useMemo(
-    () =>
-      chainProfile?.registered
-        ? {
-            ...state.profile,
-            reputation: chainProfile.reputation,
-            availableReputation: chainProfile.availableReputation,
-            reputationAtRisk: chainProfile.reputationAtRisk,
-            totalClaims: chainProfile.claimsMade,
-            resolvedClaims: chainProfile.resolvedClaims,
-            correctClaims: chainProfile.correctClaims,
-          }
-        : state.profile,
-    [chainProfile, state.profile],
-  );
-  const ledgerMode = chainProfile?.registered ? "contract" : state.ledgerMode;
-  const claims = useMemo(() => {
-    const onChainIds = new Set(
-      chainClaims.map((claim) => claim.contractClaimId).filter(Boolean),
-    );
-    return [
-      ...chainClaims,
-      ...state.claims.filter(
-        (claim) =>
-          !claim.contractClaimId || !onChainIds.has(claim.contractClaimId),
-      ),
-    ];
-  }, [chainClaims, state.claims]);
-
-  const filteredClaims = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    return claims.filter((claim) => {
-      const categoryMatch = activeCategory === "All claims" || claim.category === activeCategory;
-      const queryMatch =
-        !normalizedQuery ||
-        claim.statement.toLowerCase().includes(normalizedQuery) ||
-        claim.category.toLowerCase().includes(normalizedQuery) ||
-        claim.ownerName.toLowerCase().includes(normalizedQuery) ||
-        claim.sourceLabel.toLowerCase().includes(normalizedQuery);
-      return categoryMatch && queryMatch;
-    });
-  }, [activeCategory, claims, query]);
-
-  const visibleClaims = showAll ? filteredClaims : filteredClaims.slice(0, 4);
-  const userClaims = useMemo(
-    () =>
-      claims.filter(
-        (claim) =>
-          claim.ownerId === profile.userId ||
-          (wallet &&
-            claim.ownerAddress?.toLowerCase() === wallet.address.toLowerCase()),
-      ),
-    [claims, profile.userId, wallet],
-  );
-  const userAccuracy = accuracy(profile.correctClaims, profile.resolvedClaims);
-  const topicStats = useMemo(
-    () => ["Economy", "Football", "Technology"].map((topic) => {
-      const matching = userClaims.filter((claim) => claim.category === topic);
-      return {
-        topic,
-        claims: matching.length,
-        atRisk: matching
-          .filter((claim) => claim.status === "OPEN")
-          .reduce((sum, claim) => sum + claim.stake, 0),
-      };
-    }),
-    [userClaims],
-  );
-
-  const activeXHandle = chainProfile?.xHandle
-    ? `@${chainProfile.xHandle}`
-    : profile.handle;
-  const expectedChallengePurpose = xProofMode === "reverify" ? "REVERIFY" : "BIND";
-  const proofChallenge =
-    bindingChallenge?.active && bindingChallenge.purpose === expectedChallengePurpose
-      ? bindingChallenge.challenge
-      : "";
-  const xPostIntent = proofChallenge
-    ? `https://x.com/intent/post?text=${encodeURIComponent(proofChallenge)}`
-    : "https://x.com/compose/post";
-
-  async function refreshWalletState(address: string) {
-    const [nextProfile, nextIdentity, nextChallenge, nextStats] = await Promise.all([
+  const loadWallet = useCallback(async (address: string) => {
+    const [nextProfile, nextIdentity, nextChallenge] = await Promise.all([
       readChainProfile(address),
       readChainIdentity(address),
       readBindingChallenge(address),
-      readProtocolStats(),
     ]);
-    setChainProfile(nextProfile);
-    setChainIdentity(nextIdentity);
-    setBindingChallenge(nextChallenge);
-    setChainStats(nextStats);
-    return { nextProfile, nextIdentity, nextChallenge };
+    const nextPositions = nextProfile.predictionsMade
+      ? await readUserPositions(address, nextProfile.predictionsMade)
+      : [];
+    setProfile(nextProfile);
+    setIdentity(nextIdentity);
+    setChallenge(nextChallenge);
+    setPositions(nextPositions);
+  }, []);
+
+  const positionByMarket = useMemo(
+    () => new Map(positions.map((position) => [position.marketId, position])),
+    [positions],
+  );
+
+  const visibleMarkets = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return (feed?.markets ?? []).filter(
+      (market) =>
+        (category === "All" || market.category === category) &&
+        (!needle ||
+          market.question.toLowerCase().includes(needle) ||
+          market.category.toLowerCase().includes(needle)),
+    );
+  }, [category, feed, query]);
+
+  const maximumStake = profile?.registered
+    ? Math.max(1, Math.floor((profile.availableReputation * (protocol?.maxStakeBps ?? 2_000)) / 10_000))
+    : 0;
+
+  async function connectWallet() {
+    setBusy("connect");
+    setNotice(null);
+    try {
+      const connected = await connectCredenceWallet();
+      setWallet(connected);
+      await loadWallet(connected.address);
+      setNotice({ tone: "good", text: "Wallet connected." });
+    } catch (error) {
+      setNotice({ tone: "bad", text: error instanceof Error ? error.message : "Could not connect wallet." });
+    } finally {
+      setBusy("");
+    }
   }
 
-  function openComposer() {
-    if (!signedIn) {
-      window.location.assign(signInPath);
-      return;
-    }
+  function chooseMarket(market: SourcedMarket, prediction: "YES" | "NO") {
     if (!wallet) {
-      setNotice("Connect a wallet to make an on-chain personal claim on Bradbury.");
+      setNotice({ tone: "plain", text: "Connect your Bradbury wallet first." });
       return;
     }
-    if (!chainProfile?.registered) {
-      setNotice("Verify this wallet with one public X post before making a claim.");
+    if (!profile?.registered || !identity?.canPredict) {
+      setIdentityOpen(true);
       return;
     }
-    if (!chainIdentity?.canClaim) {
-      setNotice("Your X verification is stale. Reverify your account before making a new claim.");
+    setSelection(prediction);
+    setConfidence(70);
+    setStake(1);
+    setSelectedMarket(market);
+  }
+
+  async function submitPrediction(event: React.FormEvent) {
+    event.preventDefault();
+    if (!wallet || !selectedMarket || !profile) return;
+    if (!Number.isInteger(stake) || stake < 1 || stake > maximumStake) {
+      setNotice({ tone: "bad", text: `Stake between 1 and ${maximumStake} REP.` });
       return;
     }
-    if (
-      chainProfile.recoveryActive &&
-      !window.confirm(
-        "Making a claim ends your current recovery. Continue and put reputation at risk?",
-      )
-    ) return;
-    setComposerOpen(true);
-  }
-
-  async function handleWalletAction() {
-    if (walletBusy || !signedIn) return;
-    setWalletBusy(true);
-    setNotice(null);
+    setBusy("predict");
+    setNotice({ tone: "plain", text: "GenLayer validators are checking the source…" });
     try {
-      if (!wallet) {
-        const connected = await connectCredenceWallet();
-        const [{ nextProfile, nextIdentity, nextChallenge }, rawClaims] = await Promise.all([
-          refreshWalletState(connected.address),
-          readChainClaims(),
-        ]);
-        setWallet(connected);
-        setChainClaims(
-          rawClaims.map((claim) =>
-            productClaim(
-              claim,
-              connected.address,
-              state.profile.displayName,
-              nextProfile.xHandle ? `@${nextProfile.xHandle}` : state.profile.handle,
-            ),
-          ),
-        );
-        setChainAvailable(true);
-        setNotice(
-          nextProfile.registered
-            ? `Wallet ${shortAddress(connected.address)} connected as @${nextProfile.xHandle}.`
-            : nextChallenge.active
-              ? "Wallet connected. Finish the pending X proof to unlock 100 REP."
-              : "Wallet connected. Verify one X account to unlock 100 non-transferable REP.",
-        );
-        if (!nextProfile.registered && nextChallenge.active) {
-          setXProofMode("bind");
-          setXProofOpen(true);
-        } else if (
-          nextProfile.registered &&
-          nextChallenge.active &&
-          nextChallenge.purpose === "REVERIFY"
-        ) {
-          setXProofMode("reverify");
-          setXProofOpen(true);
-          setNotice("Finish the fresh X proof to renew this account's verification.");
-        } else if (nextIdentity.status === "STALE") {
-          setNotice("Wallet connected. Your X account needs a fresh monthly verification.");
-        }
-      } else if (!chainProfile?.registered) {
-        if (!bindingChallenge?.active) {
-          await wallet.beginXBinding();
-          await refreshWalletState(wallet.address);
-        }
-        setXProofMode("bind");
-        setXProofOpen(true);
-        setNotice("Post the exact challenge on X, then paste that post's URL here.");
-      } else {
-        setNotice(
-          `Wallet ${shortAddress(wallet.address)} is connected as @${chainProfile.xHandle}.`,
-        );
-      }
+      await wallet.makePrediction({
+        marketId: selectedMarket.id,
+        prediction: selection,
+        confidenceBps: confidence * 100,
+        stake,
+      });
+      await loadWallet(wallet.address);
+      setSelectedMarket(null);
+      setNotice({ tone: "good", text: `${stake} REP now backs ${selection}.` });
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "The wallet action did not complete.");
+      setNotice({ tone: "bad", text: error instanceof Error ? error.message : "Prediction failed." });
     } finally {
-      setWalletBusy(false);
+      setBusy("");
     }
   }
 
-  async function submitXProof() {
-    if (!wallet || !proofChallenge || walletBusy) return;
-    const proofUrl = xProofUrl.trim();
-    if (!/^https:\/\/(?:www\.)?(?:x\.com|twitter\.com)\/[^/]+\/status\/\d+\/?$/i.test(proofUrl)) {
-      setNotice("Paste the full public X post URL, ending in /status/ and its numeric post ID.");
-      return;
-    }
-
-    setWalletBusy(true);
-    setNotice(null);
+  async function beginProof() {
+    if (!wallet) return;
+    setBusy("identity");
+    setNotice({ tone: "plain", text: "Creating a fresh verification challenge…" });
     try {
-      if (xProofMode === "reverify") {
-        await wallet.verifyXReverification(proofUrl.replace(/\/$/, ""));
-      } else {
-        await wallet.verifyXBinding(proofUrl.replace(/\/$/, ""));
-      }
-      const { nextProfile } = await refreshWalletState(wallet.address);
-      setXProofOpen(false);
-      setXProofUrl("");
-      setNotice(
-        xProofMode === "reverify"
-          ? `Fresh proof accepted. @${nextProfile.xHandle} is verified for another 30 days.`
-          : `@${nextProfile.xHandle} is bound to this wallet. Your 100 REP is ready.`,
-      );
+      if (identity?.bound) await wallet.beginXReverification();
+      else await wallet.beginXBinding();
+      await loadWallet(wallet.address);
+      setNotice({ tone: "good", text: "Challenge ready. Post it exactly as shown." });
     } catch (error) {
-      setNotice(
-        error instanceof Error
-          ? error.message
-          : "GenLayer could not verify that X post.",
-      );
+      setNotice({ tone: "bad", text: error instanceof Error ? error.message : "Could not create challenge." });
     } finally {
-      setWalletBusy(false);
+      setBusy("");
     }
   }
 
-  async function handleIdentityReverification() {
-    if (!wallet || walletBusy) return;
-    setWalletBusy(true);
-    setNotice(null);
+  async function verifyProof(event: React.FormEvent) {
+    event.preventDefault();
+    if (!wallet || !challenge?.active) return;
+    setBusy("identity");
+    setNotice({ tone: "plain", text: "Validators are verifying the X post…" });
     try {
-      let challenge = bindingChallenge;
-      if (!challenge?.active || challenge.purpose !== "REVERIFY") {
-        await wallet.beginXReverification();
-        const refreshed = await refreshWalletState(wallet.address);
-        challenge = refreshed.nextChallenge;
-      }
-      if (!challenge?.active || challenge.purpose !== "REVERIFY") {
-        throw new Error("Bradbury did not return a fresh X reverification challenge.");
-      }
-      setXProofMode("reverify");
-      setXProofUrl("");
-      setXProofOpen(true);
-      setNotice("Publish this fresh challenge from the same X account, then paste the new post URL.");
+      if (challenge.purpose === "REVERIFY") await wallet.verifyXReverification(proofUrl.trim());
+      else await wallet.verifyXBinding(proofUrl.trim());
+      await loadWallet(wallet.address);
+      setProofUrl("");
+      setIdentityOpen(false);
+      setNotice({ tone: "good", text: challenge.purpose === "REVERIFY" ? "X account reverified." : "X account bound. You have 100 REP." });
     } catch (error) {
-      setNotice(
-        error instanceof Error
-          ? error.message
-          : "The monthly X reverification could not begin.",
-      );
+      setNotice({ tone: "bad", text: error instanceof Error ? error.message : "Verification failed." });
     } finally {
-      setWalletBusy(false);
+      setBusy("");
     }
   }
 
-  async function handleRecoveryAction() {
-    if (!wallet || !chainProfile || walletBusy) return;
-    setWalletBusy(true);
-    setNotice(null);
+  async function resolvePosition(position: ChainPosition) {
+    if (!wallet) return;
+    setBusy(position.marketId);
+    setNotice({ tone: "plain", text: "Validators are checking the final Polymarket result…" });
     try {
-      if (chainProfile.recoveryActive) {
-        await wallet.claimRecovery();
-      } else {
-        await wallet.startRecovery();
-      }
-      const { nextProfile } = await refreshWalletState(wallet.address);
-      setNotice(
-        nextProfile.recoveryActive
-          ? nextProfile.recoverableReputation > 0
-            ? `${nextProfile.recoverableReputation} recovery REP is ready to claim.`
-            : `Recovery is active. The next point unlocks ${formatUnixDate(nextProfile.recoveryNextAt)}.`
-          : "Recovery brought your balance back to 100 REP.",
-      );
+      await wallet.resolveMarket(position.marketId);
+      await loadWallet(wallet.address);
+      setNotice({ tone: "good", text: "Market resolved. Settle your position." });
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "The recovery action did not complete.");
+      setNotice({ tone: "bad", text: error instanceof Error ? error.message : "Resolution is not ready." });
     } finally {
-      setWalletBusy(false);
+      setBusy("");
     }
   }
 
-  async function copyProofChallenge() {
-    if (!proofChallenge) return;
+  async function settlePosition(position: ChainPosition) {
+    if (!wallet) return;
+    setBusy(position.marketId);
     try {
-      await navigator.clipboard.writeText(proofChallenge);
-      setNotice("Challenge copied. Post it by itself so GenLayer can verify it exactly.");
-    } catch {
-      setNotice("Select and copy the challenge, then post it by itself on X.");
-    }
-  }
-
-  async function submitClaim(input: ClaimInput) {
-    setBusy(true);
-    setNotice(null);
-    let claim: Claim = {
-      id: `preview-${Date.now()}`,
-      ownerId: profile.userId,
-      ownerName: profile.displayName,
-      ownerHandle: activeXHandle,
-      statement: input.statement,
-      category: input.category,
-      status: "OPEN",
-      stake: input.stake,
-      resolutionAt: input.resolutionAt,
-      sourceLabel: input.sourceLabel,
-      sourceUrl: input.sourceUrl,
-      rules: input.rules,
-      createdAt: new Date().toISOString(),
-      outcome: null,
-    };
-
-    try {
-      if (ledgerMode === "contract") {
-        if (!wallet || !chainProfile?.registered || !chainIdentity?.canClaim) {
-          throw new Error("Connect a currently verified X-linked wallet before making a claim.");
-        }
-        const result = await wallet.makeClaim(input);
-        claim = {
-          ...claim,
-          id: `chain-${result.claimId}`,
-          contractClaimId: result.claimId,
-          transactionHash: result.transactionHash,
-          ownerAddress: wallet.address,
-          ownerId: wallet.address.toLowerCase(),
-        };
-        const [nextProfile, nextStats] = await Promise.all([
-          readChainProfile(wallet.address),
-          readProtocolStats(),
-        ]);
-        setChainProfile(nextProfile);
-        setChainStats(nextStats);
-        setChainClaims((current) => [claim, ...current]);
-      } else if (state.ledgerMode === "indexed") {
-        const response = await fetch("/api/claims", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(input),
-        });
-        const result = (await response.json()) as { error?: string; claim?: Claim };
-        if (!response.ok || !result.claim) {
-          throw new Error(result.error || "Your claim could not be recorded.");
-        }
-        claim = result.claim;
-      }
-
-      if (ledgerMode !== "contract") {
-        setState((current) => ({
-          ...current,
-          profile: {
-            ...current.profile,
-            availableReputation: current.profile.availableReputation - input.stake,
-            reputationAtRisk: current.profile.reputationAtRisk + input.stake,
-            totalClaims: current.profile.totalClaims + 1,
-          },
-          claims: [claim, ...current.claims],
-        }));
-      }
-      setComposerOpen(false);
-      setNotice(
-        ledgerMode === "contract"
-          ? "Your claim reached GenLayer consensus. Your REP is now locked behind your word."
-          : `${input.stake} REP is now locked behind your claim. TRUE returns ${input.stake * 2}; FALSE returns zero.`,
-      );
+      await wallet.settlePrediction(position.marketId);
+      await loadWallet(wallet.address);
+      setNotice({ tone: "good", text: "Your REP and Prediction Score are updated." });
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Your claim could not be recorded.");
+      setNotice({ tone: "bad", text: error instanceof Error ? error.message : "Settlement failed." });
     } finally {
-      setBusy(false);
+      setBusy("");
+    }
+  }
+
+  async function recover(action: "start" | "claim") {
+    if (!wallet) return;
+    setBusy("recovery");
+    try {
+      if (action === "start") await wallet.startRecovery();
+      else await wallet.claimRecovery();
+      await loadWallet(wallet.address);
+      setNotice({ tone: "good", text: action === "start" ? "REP recovery started." : "Recovered REP claimed." });
+    } catch (error) {
+      setNotice({ tone: "bad", text: error instanceof Error ? error.message : "Recovery action failed." });
+    } finally {
+      setBusy("");
     }
   }
 
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="Credence home">
+        <button className="brand" onClick={() => setView("feed")} aria-label="Credence home">
           <span className="brand-mark"><MarkIcon /></span>
-          <span>CREDENCE</span>
-        </a>
-
-        <nav className="desktop-nav" aria-label="Primary navigation">
-          <a className="active" href="#claims"><CompassIcon /> Claims</a>
-          <a href="#record"><ChartIcon /> My record</a>
-          <a href="#leaderboard"><TrophyIcon /> Leaderboard</a>
-          <a href="#reputation"><UserIcon /> Profile</a>
-        </nav>
-
-        <div className="topbar-actions">
-          <label className="search-field">
-            <SearchIcon />
-            <input aria-label="Search claims" onChange={(event) => setQuery(event.target.value)} placeholder="Search claims" value={query} />
-          </label>
+          CREDENCE
+        </button>
+        <div className="network-pill"><span /> Polymarket · Bradbury</div>
+        <div className="header-actions">
           {signedIn ? (
-            <>
-              <button
-                className={`wallet-button ${chainProfile?.registered ? "wallet-button-ready" : ""}`}
-                disabled={walletBusy}
-                onClick={handleWalletAction}
-                type="button"
-              >
-                <ShieldIcon />
-                {walletBusy
-                  ? "Waiting for wallet…"
-                  : !wallet
-                    ? "Connect wallet"
-                    : !chainProfile?.registered
-                      ? bindingChallenge?.active
-                        ? "Finish X proof"
-                        : "Verify with X"
-                      : chainProfile.xHandle
-                        ? `@${chainProfile.xHandle}`
-                        : shortAddress(wallet.address)}
-              </button>
-              <div className="user-chip">
-                <span className="avatar avatar-self">{initials(profile.displayName)}</span>
-                <span className="user-chip-copy"><strong>{profile.reputation} REP</strong><small>{profile.reputationAtRisk} at risk</small></span>
-                <ChevronIcon />
-              </div>
-            </>
+            <span className="viewer-name">{viewer?.displayName?.split(" ")[0]}</span>
           ) : (
-            <a className="sign-in-button" href={signInPath}>Start with 100 REP</a>
+            <a className="quiet-button" href={signInPath}>Sign in</a>
           )}
+          {wallet && (
+            <button className="quiet-button" onClick={() => setIdentityOpen(true)}>
+              <ShieldIcon /> {identity?.bound ? `@${identity.handle}` : "Verify X"}
+            </button>
+          )}
+          <button className="wallet-button" onClick={connectWallet} disabled={Boolean(busy)}>
+            {wallet ? shortAddress(wallet.address) : busy === "connect" ? "Connecting…" : "Connect wallet"}
+          </button>
         </div>
       </header>
 
-      <main id="top">
-        <section className="hero-section">
-          <div className="hero-grid" />
-          <div className="hero-orb hero-orb-one" />
-          <div className="hero-orb hero-orb-two" />
-          <div className="hero-content">
-            <div className="hero-proof"><ShieldIcon /> One person. One claim. Their reputation.</div>
-            <h1>Say what will happen.<br /><em>Put your reputation on it.</em></h1>
-            <p>Bind one public X account to one wallet and start with 100 reputation points. Back your own claim: if it is true, your stake returns doubled; if it is false, those points are gone.</p>
-            <div className="hero-actions">
-              <button className="primary-cta" onClick={openComposer} type="button">Make your claim <span>↘</span></button>
-              <a className="text-cta" href="#how-it-works">See the exact math</a>
-            </div>
-            <div className="chain-status" aria-label="Bradbury contract status">
-              <span className={`chain-status-dot ${chainAvailable === false ? "chain-status-dot-error" : ""}`} />
-              <span>
-                <strong>{chainAvailable === false ? "Bradbury read unavailable" : "Bradbury contract live"}</strong>
-                <a href={BRADBURY_EXPLORER_URL} rel="noreferrer" target="_blank" title={CREDENCE_CONTRACT_ADDRESS}>
-                  {shortAddress(CREDENCE_CONTRACT_ADDRESS)} ↗
-                </a>
-              </span>
-              <small>
-                {chainStats ? `${chainStats.users} user${chainStats.users === 1 ? "" : "s"} · ${chainStats.claims} on-chain claims` : "Checking contract…"}
-              </small>
-              <a href={BRADBURY_FAUCET_URL} rel="noreferrer" target="_blank">Bradbury faucet ↗</a>
-            </div>
-          </div>
+      {notice && (
+        <button className={`notice notice-${notice.tone}`} onClick={() => setNotice(null)}>
+          {notice.text}<span>×</span>
+        </button>
+      )}
 
-          <div className="hero-signal-card" aria-label="Your reputation balance">
-            <div className="signal-card-header"><span>YOUR REPUTATION</span><span className="pulse-dot" /></div>
-            <div className="signal-score-row"><span className="signal-score">{profile.reputation}</span><span className="signal-unit">REP</span></div>
-            <div className="signal-chart"><span style={{ height: "26%" }} /><span style={{ height: "42%" }} /><span style={{ height: "35%" }} /><span style={{ height: "60%" }} /><span style={{ height: "54%" }} /><span style={{ height: "76%" }} /><span style={{ height: "89%" }} /></div>
-            <div className="signal-card-footer"><span>{profile.availableReputation} available</span><strong>{profile.reputationAtRisk} at risk</strong></div>
+      <main>
+        <section className="hero">
+          <div>
+            <p className="eyebrow">REPUTATION FORECASTING</p>
+            <h1>Forecast with reputation.</h1>
+            <p className="hero-copy">Choose a live question. Back YES or NO with your own REP.</p>
+          </div>
+          <div className="hero-ledger">
+            <Metric label="REP" value={profile?.registered ? profile.reputation : "—"} />
+            <Metric label="Prediction Score" value={profile?.resolvedPredictions ? percent(profile.predictionScoreBps) : "—"} />
+            <Metric label="Accuracy" value={profile?.resolvedPredictions ? percent(profile.accuracyBps) : "—"} />
+            <Metric label="At risk" value={profile?.registered ? profile.reputationAtRisk : "—"} />
           </div>
         </section>
 
-        <section className="ticker" aria-label="Credence rules">
-          <span>VERIFIED START <strong>100 REP</strong></span>
-          <span>CORRECT CLAIM <strong>2× STAKE BACK</strong></span>
-          <span>WRONG CLAIM <strong>STAKE BURNED</strong></span>
-          <span>BELOW 20 <strong>RECOVER TO 100</strong></span>
-          <span>TRUTH LAYER <strong className="ticker-green">GENLAYER</strong></span>
-        </section>
+        <nav className="view-tabs" aria-label="Credence views">
+          <button className={view === "feed" ? "active" : ""} onClick={() => setView("feed")}>Live questions</button>
+          <button className={view === "record" ? "active" : ""} onClick={() => setView("record")}>My record {positions.length ? `(${positions.length})` : ""}</button>
+        </nav>
 
-        {notice && (
-          <div className="notice-bar" role="status"><BoltIcon /> {notice}<button aria-label="Dismiss message" onClick={() => setNotice(null)} type="button">×</button></div>
-        )}
-
-        <section className="markets-section" id="claims">
-          <div className="section-heading-row">
-            <div><span className="section-kicker">PUBLIC COMMITMENTS</span><h2>People backing their word.</h2><p>Each card belongs to one person risking only their own non-transferable reputation.</p></div>
-            <div className="claim-heading-actions">
-              <div className="market-filters" role="group" aria-label="Filter claims">
-                {CATEGORIES.map((category) => (
-                  <button className={activeCategory === category ? "active" : ""} key={category} onClick={() => { setActiveCategory(category); setShowAll(false); }} type="button">{category}</button>
+        {view === "feed" ? (
+          <section className="feed-section">
+            <div className="feed-tools">
+              <label className="search-box">
+                <SearchIcon />
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search questions" />
+              </label>
+              <div className="category-row">
+                {CATEGORIES.map((item) => (
+                  <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>{item}</button>
                 ))}
               </div>
-              <button className="make-claim-button" onClick={openComposer} type="button">+ Make a claim</button>
             </div>
-          </div>
 
-          <div className="market-grid">
-            {visibleClaims.map((claim, index) => (
-              <ClaimCard
-                claim={claim}
-                featured={index === 0 && activeCategory === "All claims" && !query}
-                isOwner={
-                  claim.ownerId === profile.userId ||
-                  Boolean(wallet && claim.ownerAddress?.toLowerCase() === wallet.address.toLowerCase())
-                }
-                key={claim.id}
-              />
-            ))}
-          </div>
-          {!visibleClaims.length && <div className="empty-state">No claims match that signal. Try another topic or keyword.</div>}
-          {filteredClaims.length > 4 && (
-            <button className="show-more" onClick={() => setShowAll((value) => !value)} type="button">{showAll ? "Show the latest claims" : `Show ${filteredClaims.length - 4} more claims`}<ChevronIcon className={showAll ? "rotated" : ""} /></button>
-          )}
-        </section>
-
-        <section className="reputation-section" id="reputation">
-          <div className="reputation-copy">
-            <span className="section-kicker section-kicker-light">YOUR WORD HAS WEIGHT</span>
-            <h2>No odds. No pool.<br /><em>Just your record.</em></h2>
-            <p>Your reputation is a single visible balance. Correct claims add the amount you risked. Wrong claims permanently remove it. Below 20, a claim-free account can slowly recover to 100—but only a win can go higher.</p>
-            <div className="trust-list"><span><i>01</i> One X account per wallet</span><span><i>02</i> Non-transferable points</span><span><i>03</i> Immutable wins and misses</span></div>
-          </div>
-
-          <div className="profile-card" id="record">
-            <div className="profile-card-top">
-              <div className="profile-identity"><span className="avatar avatar-large avatar-self">{initials(profile.displayName)}</span><div><h3>{profile.displayName}</h3><p>{activeXHandle} · {profile.resolvedClaims < 10 ? "Building a record" : "Proven claimant"}</p></div></div>
-              <span className="verified-badge"><ShieldIcon /> {chainIdentity?.bound ? `X ${chainIdentity.status.toLowerCase()}` : ledgerMode === "contract" ? "Bradbury on-chain" : "Preview ledger"}</span>
-            </div>
-            <div className="profile-score-grid">
-              <div className="profile-score-main"><span>REPUTATION</span><strong>{profile.reputation}</strong><small>{profile.reputation - 100 >= 0 ? "+" : ""}{profile.reputation - 100} from start</small></div>
-              <div><span>AVAILABLE</span><strong>{profile.availableReputation}</strong><small>Ready to back claims</small></div>
-              <div><span>AT RISK</span><strong>{profile.reputationAtRisk}</strong><small>Locked in open claims</small></div>
-              <div><span>ACCURACY</span><strong>{userAccuracy === null ? "—" : `${userAccuracy}%`}</strong><small>{profile.resolvedClaims} resolved</small></div>
-            </div>
-            {signedIn && (
-              <div className="identity-recovery-grid">
-                <section className="identity-control" aria-label="X identity verification">
-                  <div className="identity-control-heading">
-                    <span className={`identity-state identity-state-${(chainIdentity?.status || "unbound").toLowerCase()}`}>
-                      <i /> {chainIdentity?.status || "NOT CONNECTED"}
-                    </span>
-                    {chainIdentity?.verifiedUntil ? <small>Reverify by {formatUnixDate(chainIdentity.verifiedUntil)}</small> : <small>One X account · one wallet</small>}
-                  </div>
-                  <strong>{chainIdentity?.bound ? `@${chainIdentity.handle}` : wallet ? "X proof required" : "Connect a wallet to begin"}</strong>
-                  <p>GenLayer binds the X account’s stable ID, then requires a fresh challenge post every 30 days to prove you still control it.</p>
-                  <div className="identity-actions">
-                    {!wallet || !chainProfile?.registered ? (
-                      <button disabled={walletBusy} onClick={handleWalletAction} type="button">
-                        {!wallet ? "Connect wallet" : bindingChallenge?.active ? "Finish X proof" : "Verify with X"}
-                      </button>
-                    ) : (
-                      <>
-                        {(chainIdentity?.reverificationDue || chainIdentity?.reverificationPending || chainIdentity?.status === "GRACE" || chainIdentity?.status === "STALE") && (
-                          <button disabled={walletBusy} onClick={handleIdentityReverification} type="button">
-                            {chainIdentity?.reverificationPending || (bindingChallenge?.active && bindingChallenge.purpose === "REVERIFY") ? "Finish X reverification" : "Reverify X account"}
-                          </button>
-                        )}
-                        {chainIdentity?.proofUrl && <a href={chainIdentity.proofUrl} rel="noreferrer" target="_blank">View proof ↗</a>}
-                      </>
-                    )}
-                  </div>
-                </section>
-                <section className="recovery-control" aria-label="Reputation recovery">
-                  <div className="recovery-control-heading"><span>SAFETY FLOOR</span><small>Never above 100</small></div>
-                  <strong>{chainProfile?.recoveryActive ? `${chainProfile.recoverableReputation} REP ready` : profile.reputation < 20 ? "Recovery available" : "Unlocks below 20 REP"}</strong>
-                  <p>{chainProfile?.recoveryActive ? `Recovery is active. One point unlocks each day; the next checkpoint is ${formatUnixDate(chainProfile.recoveryNextAt)}.` : "With no open claims, wait seven days, then recover one REP per day. Making a new claim ends recovery."}</p>
-                  {wallet && chainProfile && (chainProfile.recoveryActive || (chainProfile.reputation < 20 && chainProfile.openClaims === 0)) && (
-                    <button
-                      disabled={walletBusy || (chainProfile.recoveryActive && chainProfile.recoverableReputation < 1) || !chainIdentity?.canClaim}
-                      onClick={handleRecoveryAction}
-                      type="button"
-                    >
-                      {chainProfile.recoveryActive ? chainProfile.recoverableReputation > 0 ? `Claim ${chainProfile.recoverableReputation} REP` : `Next point ${formatUnixDate(chainProfile.recoveryNextAt)}` : "Start 7-day recovery"}
-                    </button>
-                  )}
-                </section>
-              </div>
-            )}
-            <div className="topic-ratings">
-              <div className="topic-ratings-header"><span>YOUR CLAIM RECORD</span><span>{profile.totalClaims} total claims</span></div>
-              {topicStats.map(({ topic, claims, atRisk }) => (
-                <div className="topic-row" key={topic}><span>{topic}</span><div><i style={{ width: `${Math.min(100, claims * 20)}%` }} /></div><strong>{atRisk} REP</strong><small>{claims} claims</small></div>
+            {!feed && !feedError && <div className="empty-state">Loading live questions…</div>}
+            {feedError && <div className="empty-state error-state">{feedError}<button onClick={() => window.location.reload()}>Retry</button></div>}
+            {feed && !visibleMarkets.length && <div className="empty-state">No matching live questions.</div>}
+            <div className="market-grid">
+              {visibleMarkets.map((market) => (
+                <MarketCard key={market.id} market={market} position={positionByMarket.get(market.id)} onChoose={chooseMarket} />
               ))}
             </div>
-          </div>
-        </section>
+            {feed && (
+              <p className="feed-footnote">
+                Questions from <a href="https://polymarket.com" target="_blank" rel="noreferrer">Polymarket</a>. No money, odds, or pool is copied into Credence.
+                {feed.stale ? " Showing the latest cached feed." : ""}
+              </p>
+            )}
+          </section>
+        ) : (
+          <section className="record-section">
+            {!wallet && <div className="empty-state"><h2>Connect your wallet</h2><p>Your onchain prediction record will appear here.</p><button onClick={connectWallet}>Connect wallet</button></div>}
+            {wallet && !profile?.registered && <div className="empty-state"><h2>Verify one X account</h2><p>This creates your non-transferable 100 REP identity.</p><button onClick={() => setIdentityOpen(true)}>Verify X</button></div>}
+            {profile?.registered && (
+              <>
+                <div className="record-header">
+                  <div><p className="eyebrow">ONCHAIN RECORD</p><h2>{identity?.handle ? `@${identity.handle}` : shortAddress(wallet?.address ?? "")}</h2></div>
+                  <div className="record-stats">
+                    <Metric label="Resolved" value={profile.resolvedPredictions} />
+                    <Metric label="Correct" value={profile.correctPredictions} />
+                    <Metric label="Voids" value={profile.voidPredictions} />
+                  </div>
+                </div>
 
-        <section className="leaderboard-section" id="leaderboard">
-          <div className="section-heading-row"><div><span className="section-kicker">PROVEN WORD</span><h2>People whose claims hold up.</h2></div><button className="text-link link-button" onClick={openComposer} type="button">Put your name on one ↗</button></div>
-          <div className="leaderboard-table" role="table" aria-label="Top reputation holders">
-            <div className="leaderboard-head" role="row"><span>RANK</span><span>PERSON</span><span>STRONGEST TOPIC</span><span>ACCURACY</span><span>RESOLVED</span><span>REPUTATION</span></div>
-            {state.leaderboard.map((leader, index) => (
-              <div className="leaderboard-row" key={leader.userId} role="row"><span className="rank-number">{String(index + 1).padStart(2, "0")}</span><span className="leader-person"><i className={`avatar avatar-${index + 1}`}>{initials(leader.displayName)}</i><span><strong>{leader.displayName}</strong><small>{leader.handle}</small></span></span><span><span className="topic-pill">{leader.category}</span></span><strong>{leader.accuracy}%</strong><span>{leader.resolved}</span><span className="leader-rating"><strong>{leader.reputation}</strong><small className="signal-up">+{leader.delta}</small></span></div>
-            ))}
-          </div>
-        </section>
+                {profile.reputation < 20 && profile.openPredictions === 0 && (
+                  <div className="recovery-card">
+                    <div><strong>REP recovery</strong><span>{profile.recoveryActive ? `Next claim ${formatDate(profile.recoveryNextAt)}` : "Recover slowly toward 100."}</span></div>
+                    {!profile.recoveryActive ? (
+                      <button disabled={busy === "recovery"} onClick={() => recover("start")}>Start</button>
+                    ) : profile.recoverableReputation > 0 ? (
+                      <button disabled={busy === "recovery"} onClick={() => recover("claim")}>Claim {profile.recoverableReputation}</button>
+                    ) : null}
+                  </div>
+                )}
 
-        <section className="how-section" id="how-it-works">
-          <div className="how-heading"><span className="section-kicker">THE EXACT MECHANISM</span><h2>One claim.<br />Three outcomes.</h2></div>
-          <div className="how-steps">
-            <article><span>01</span><BoltIcon /><h3>Verify one X account</h3><p>Post your wallet’s exact challenge to unlock 100 REP, then publish a fresh proof every 30 days to keep it verified.</p></article>
-            <article><span>02</span><ChartIcon /><h3>Back your own claim</h3><p>Write a future statement, freeze its rule and source, then put at least one of your points behind it.</p></article>
-            <article><span>03</span><ShieldIcon /><h3>GenLayer checks truth</h3><p>Independent validators resolve your statement TRUE, FALSE, or VOID from the approved evidence.</p></article>
-            <article><span>04</span><TrophyIcon /><h3>Win beyond 100</h3><p>From 100, risking 1 ends at 101 if TRUE or 99 if FALSE. Below 20, recovery can rebuild only to 100.</p></article>
-          </div>
-        </section>
-
-        <section className="closing-cta"><div><span className="section-kicker section-kicker-light">WILL YOU STAND BY IT?</span><h2>Put your reputation<br />behind your word.</h2></div><button className="closing-button" onClick={openComposer} type="button">Make your claim <span>↗</span></button></section>
+                {!positions.length ? (
+                  <div className="empty-state"><h2>No predictions yet</h2><button onClick={() => setView("feed")}>Browse questions</button></div>
+                ) : (
+                  <div className="position-list">
+                    {positions.map((position) => {
+                      const canResolve = position.status === "OPEN" && position.market.status === "OPEN";
+                      const canSettle = position.status === "OPEN" && position.market.status !== "OPEN";
+                      return (
+                        <article className="position-card" key={position.marketId}>
+                          <div className="position-copy">
+                            <div className="position-top"><span className={`status status-${position.status.toLowerCase()}`}>{statusLabel(position.status)}</span><a href={position.market.sourceUrl} target="_blank" rel="noreferrer">Source ↗</a></div>
+                            <h3>{position.market.question}</h3>
+                            <p><strong>{position.prediction}</strong> · {Math.round(position.confidenceBps / 100)}% confidence · {position.stake} REP</p>
+                          </div>
+                          <div className="position-action">
+                            {position.status !== "OPEN" && position.status !== "VOID" && <Metric label="Score" value={percent(position.scoreBps)} />}
+                            {canResolve && <button disabled={busy === position.marketId} onClick={() => resolvePosition(position)}>Resolve</button>}
+                            {canSettle && <button disabled={busy === position.marketId} onClick={() => settlePosition(position)}>Settle</button>}
+                            {position.status === "OPEN" && !canResolve && !canSettle && <span>Ends {formatDate(position.market.endTimeUnix)}</span>}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        )}
       </main>
 
-      <footer className="site-footer"><a className="brand brand-footer" href="#top"><span className="brand-mark"><MarkIcon /></span><span>CREDENCE</span></a><p>Personal reputation claims, settled by consensus.</p><div><a href="#claims">Claims</a><a href="#reputation">Your record</a><a href={BRADBURY_EXPLORER_URL} rel="noreferrer" target="_blank">Bradbury contract ↗</a></div><span>GenLayer Bradbury · {shortAddress(CREDENCE_CONTRACT_ADDRESS)}</span></footer>
+      <footer>
+        <span>Credence · Bradbury testnet</span>
+        <div><a href={BRADBURY_FAUCET_URL} target="_blank" rel="noreferrer">Faucet</a><a href={BRADBURY_EXPLORER_URL} target="_blank" rel="noreferrer">Explorer</a><a href={`${BRADBURY_EXPLORER_URL}address/${CREDENCE_CONTRACT_ADDRESS}`} target="_blank" rel="noreferrer">Contract</a></div>
+      </footer>
 
-      {xProofOpen && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !walletBusy && setXProofOpen(false)}>
-          <section aria-labelledby="x-proof-title" aria-modal="true" className="forecast-modal x-proof-modal" role="dialog">
-            <button aria-label="Close X verification" className="modal-close" disabled={walletBusy} onClick={() => setXProofOpen(false)} type="button">×</button>
-            <div className="modal-kicker">ONE X ACCOUNT · ONE WALLET</div>
-            <h2 id="x-proof-title">{xProofMode === "reverify" ? "Reverify your X account" : "Verify your X identity"}</h2>
-            <p className="modal-rules">
-              {xProofMode === "reverify"
-                ? `Post this new challenge by itself from @${chainIdentity?.handle || "your bound account"}. The fresh post proves you still control the same X account.`
-                : "Post this exact challenge by itself from the X account you want permanently attached to this wallet. Replies do not count."}
-            </p>
-            <div className="x-challenge-box">
-              <span>EXACT POST TEXT</span>
-              <code>{proofChallenge || "Create a challenge from your wallet first."}</code>
-              <button disabled={!proofChallenge} onClick={copyProofChallenge} type="button">Copy challenge</button>
-            </div>
-            <a className="x-post-button" href={xPostIntent} rel="noreferrer" target="_blank">Open X and publish exact text ↗</a>
-            <label className="x-proof-field">
-              <span>Public X post URL</span>
-              <input
-                onChange={(event) => setXProofUrl(event.target.value)}
-                placeholder="https://x.com/yourhandle/status/…"
-                type="url"
-                value={xProofUrl}
-              />
-              <small>GenLayer validators independently check the post, its author’s stable account ID, and the exact challenge.</small>
-            </label>
-            <button className="commit-button" disabled={walletBusy || !proofChallenge || !xProofUrl.trim()} onClick={submitXProof} type="button">
-              {walletBusy ? "GenLayer is checking X…" : xProofMode === "reverify" ? "Complete X reverification" : "Bind X and unlock 100 REP"}
-              {!walletBusy && <ShieldIcon />}
-            </button>
+      {selectedMarket && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setSelectedMarket(null)}>
+          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="prediction-title">
+            <button className="modal-close" onClick={() => setSelectedMarket(null)} aria-label="Close"><CloseIcon /></button>
+            <p className="eyebrow">BACK YOUR FORECAST</p>
+            <h2 id="prediction-title">{selectedMarket.question}</h2>
+            <form onSubmit={submitPrediction}>
+              <div className="modal-choices">
+                <button type="button" className={selection === "YES" ? "active yes" : ""} onClick={() => setSelection("YES")}>YES</button>
+                <button type="button" className={selection === "NO" ? "active no" : ""} onClick={() => setSelection("NO")}>NO</button>
+              </div>
+              <label className="field-label"><span>Confidence <strong>{confidence}%</strong></span><input type="range" min="50" max="95" step="1" value={confidence} onChange={(event) => setConfidence(Number(event.target.value))} /></label>
+              <label className="field-label"><span>REP at risk <small>Max {maximumStake}</small></span><input className="number-input" type="number" min="1" max={maximumStake} value={stake} onChange={(event) => setStake(Number(event.target.value))} /></label>
+              <div className="settlement-preview"><span>Correct</span><strong>+{stake} REP</strong><span>Wrong</span><strong>−{stake} REP</strong></div>
+              <button className="primary-button" disabled={busy === "predict" || maximumStake < 1} type="submit">{busy === "predict" ? "Checking source…" : `Back ${selection} with ${stake} REP`}</button>
+            </form>
           </section>
         </div>
       )}
 
-      {composerOpen && <ClaimModal availableReputation={profile.availableReputation} busy={busy} mode={ledgerMode} onClose={() => !busy && setComposerOpen(false)} onSubmit={submitClaim} reputation={profile.reputation} />}
+      {identityOpen && wallet && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setIdentityOpen(false)}>
+          <section className="modal identity-modal" role="dialog" aria-modal="true" aria-labelledby="identity-title">
+            <button className="modal-close" onClick={() => setIdentityOpen(false)} aria-label="Close"><CloseIcon /></button>
+            <ShieldIcon className="identity-icon" />
+            <h2 id="identity-title">X verification</h2>
+            {identity?.bound && !identity.reverificationDue && !challenge?.active ? (
+              <div className="verified-box"><strong>@{identity.handle}</strong><span>Verified until {formatDate(identity.verifiedUntil)}</span></div>
+            ) : challenge?.active ? (
+              <form onSubmit={verifyProof}>
+                <label className="field-label"><span>Post this exact text</span><textarea readOnly value={challenge.challenge} /></label>
+                <div className="inline-actions">
+                  <button type="button" onClick={() => navigator.clipboard.writeText(challenge.challenge)}>Copy</button>
+                  <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(challenge.challenge)}`} target="_blank" rel="noreferrer">Post on X ↗</a>
+                </div>
+                <label className="field-label"><span>Post URL</span><input className="text-input" required value={proofUrl} onChange={(event) => setProofUrl(event.target.value)} placeholder="https://x.com/you/status/…" /></label>
+                <button className="primary-button" disabled={busy === "identity"} type="submit">{busy === "identity" ? "Verifying…" : challenge.purpose === "REVERIFY" ? "Reverify" : "Verify and receive 100 REP"}</button>
+              </form>
+            ) : (
+              <div className="identity-start">
+                <p>{identity?.bound ? "A fresh post rechecks that you still control the same X account." : "One X account binds to one wallet."}</p>
+                <button className="primary-button" disabled={busy === "identity"} onClick={beginProof}>{busy === "identity" ? "Creating…" : identity?.bound ? "Create recheck" : "Create verification"}</button>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
     </div>
   );
 }
