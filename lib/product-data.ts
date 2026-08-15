@@ -25,3 +25,11 @@ export type MarketFeed = {
   stale: boolean;
   source: "Polymarket";
 };
+
+export type MarketResolutionReadiness = {
+  marketId: string;
+  resolvable: boolean;
+  outcome: "YES" | "NO" | "VOID" | null;
+  reason: "SOURCE_OPEN" | "OUTCOME_PENDING" | "READY";
+  checkedAt: string;
+};

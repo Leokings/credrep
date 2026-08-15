@@ -1,7 +1,12 @@
-import type { MarketCategory, SourcedMarket } from "./product-data";
+import type {
+  MarketCategory,
+  MarketResolutionReadiness,
+  SourcedMarket,
+} from "./product-data";
 
+const GAMMA_MARKET_ROOT = "https://gamma-api.polymarket.com/markets";
 const GAMMA_MARKETS_URL =
-  "https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=200&order=volume24hr&ascending=false&include_tag=true";
+  `${GAMMA_MARKET_ROOT}?active=true&closed=false&limit=200&order=volume24hr&ascending=false&include_tag=true`;
 const CACHE_MS = 60_000;
 
 type CachedFeed = {
@@ -35,6 +40,16 @@ function array(value: unknown): unknown[] {
   } catch {
     return [];
   }
+}
+
+function normalizedFinalPrice(value: unknown): "0" | "0.5" | "1" | null {
+  const raw = String(value).trim();
+  const normalized = raw.includes(".")
+    ? raw.replace(/0+$/, "").replace(/\.$/, "")
+    : raw;
+  if (!normalized || normalized === "0") return "0";
+  if (normalized === "0.5" || normalized === "1") return normalized;
+  return null;
 }
 
 function tagLabels(market: Record<string, unknown>) {
@@ -147,4 +162,57 @@ export async function fetchPolymarketFeed() {
     markets,
   };
   return memoryCache;
+}
+
+export async function fetchPolymarketResolutionReadiness(
+  marketId: string,
+): Promise<MarketResolutionReadiness> {
+  if (!/^\d{1,32}$/.test(marketId)) {
+    throw new Error("A numeric Polymarket market ID is required.");
+  }
+
+  const response = await fetch(`${GAMMA_MARKET_ROOT}/${marketId}`, {
+    headers: { accept: "application/json" },
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`Polymarket market lookup returned HTTP ${response.status}.`);
+  }
+
+  const market = record((await response.json()) as unknown);
+  if (!market || text(market.id, 32) !== marketId) {
+    throw new Error("Polymarket returned an unexpected market.");
+  }
+
+  const outcomes = array(market.outcomes).map((outcome) =>
+    String(outcome).trim().toUpperCase(),
+  );
+  if (outcomes.length !== 2 || outcomes[0] !== "YES" || outcomes[1] !== "NO") {
+    throw new Error("This Polymarket market is not binary Yes/No.");
+  }
+
+  const checkedAt = new Date().toISOString();
+  if (market.closed !== true) {
+    return {
+      marketId,
+      resolvable: false,
+      outcome: null,
+      reason: "SOURCE_OPEN",
+      checkedAt,
+    };
+  }
+
+  const prices = array(market.outcomePrices).map(normalizedFinalPrice);
+  let outcome: MarketResolutionReadiness["outcome"] = null;
+  if (prices[0] === "1" && prices[1] === "0") outcome = "YES";
+  if (prices[0] === "0" && prices[1] === "1") outcome = "NO";
+  if (prices[0] === "0.5" && prices[1] === "0.5") outcome = "VOID";
+
+  return {
+    marketId,
+    resolvable: outcome !== null,
+    outcome,
+    reason: outcome === null ? "OUTCOME_PENDING" : "READY",
+    checkedAt,
+  };
 }

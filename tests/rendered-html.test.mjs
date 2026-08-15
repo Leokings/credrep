@@ -99,6 +99,14 @@ test("rejects malformed wallet-index requests before database access", async () 
   assert.deepEqual(await response.json(), { error: "A wallet address is required." });
 });
 
+test("rejects malformed market resolution checks before upstream access", async () => {
+  const response = await fetch(`${origin}/api/markets/not-a-market/resolution`);
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: "A numeric Polymarket market ID is required.",
+  });
+});
+
 test("redirects the conventional favicon path", async () => {
   const response = await fetch(`${origin}/favicon.ico`, { redirect: "manual" });
   assert.equal(response.status, 308);

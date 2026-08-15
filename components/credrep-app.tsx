@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CommunityFeed } from "../lib/community-data";
-import type { MarketCategory, MarketFeed, SourcedMarket } from "../lib/product-data";
+import type {
+  MarketCategory,
+  MarketFeed,
+  MarketResolutionReadiness,
+  SourcedMarket,
+} from "../lib/product-data";
 import {
   CredenceTransactionExecutionError,
   connectCredenceWallet,
@@ -192,6 +197,25 @@ async function fetchMarketFeed(signal?: AbortSignal): Promise<MarketFeed> {
   });
   const body = (await response.json()) as MarketFeed & { error?: string };
   if (!response.ok) throw new Error(body.error || "Market feed unavailable.");
+  return body;
+}
+
+async function fetchMarketResolutionReadiness(
+  marketId: string,
+): Promise<MarketResolutionReadiness> {
+  const response = await fetch(
+    `/api/markets/${encodeURIComponent(marketId)}/resolution`,
+    {
+      headers: { accept: "application/json" },
+      cache: "no-store",
+    },
+  );
+  const body = (await response.json()) as MarketResolutionReadiness & {
+    error?: string;
+  };
+  if (!response.ok) {
+    throw new Error(body.error || "Could not check Polymarket.");
+  }
   return body;
 }
 
@@ -839,12 +863,36 @@ export function CredrepApp() {
 
   async function resolvePosition(position: ChainPosition) {
     if (!wallet) return;
+    if (transactionInFlight) {
+      setNotice({ tone: "plain", text: "Transaction pending." });
+      return;
+    }
+
+    setBusy(position.marketId);
+    setNotice({ tone: "plain", text: "Checking Polymarket…" });
+    let readiness: MarketResolutionReadiness | null = null;
+    try {
+      readiness = await fetchMarketResolutionReadiness(position.marketId);
+    } catch (error) {
+      setNotice({
+        tone: "bad",
+        text: error instanceof Error ? error.message : "Could not check Polymarket.",
+      });
+    } finally {
+      setBusy("");
+    }
+    if (!readiness) return;
+    if (!readiness.resolvable) {
+      setNotice({ tone: "plain", text: "Polymarket has not finalized this yet." });
+      return;
+    }
+
     await runTrackedAction({
       busyKey: position.marketId,
       kind: "RESOLVE",
       label: "Resolve market",
-      pendingText: "Resolving market…",
-      successText: "Market resolved. Settle your position.",
+      pendingText: "Resolving…",
+      successText: "Ready to settle.",
       execute: (onSubmitted) =>
         wallet.resolveMarket(position.marketId, onSubmitted),
     });
@@ -1112,7 +1160,7 @@ export function CredrepApp() {
                           </div>
                           <div className="position-action">
                             {position.status !== "OPEN" && position.status !== "VOID" && <Metric label="Score" value={percent(position.scoreBps)} />}
-                            {canResolve && <button disabled={busy === position.marketId || transactionInFlight || !networkReady} onClick={() => resolvePosition(position)}>Resolve</button>}
+                            {canResolve && <button disabled={busy === position.marketId || transactionInFlight || !networkReady} onClick={() => resolvePosition(position)}>Check result</button>}
                             {canVoid && <button disabled={busy === position.marketId || transactionInFlight || !networkReady} onClick={() => voidPosition(position)}>Void &amp; refund</button>}
                             {canSettle && <button disabled={busy === position.marketId || transactionInFlight || !networkReady} onClick={() => settlePosition(position)}>Settle</button>}
                             {position.status === "OPEN" && !canResolve && !canSettle && <span>Ends {formatDate(position.market.endTimeUnix)}</span>}
