@@ -26,13 +26,20 @@ Hosted consensus-test evidence is recorded in
 [`docs/submission-evidence/studionet-2026-08-14.md`](docs/submission-evidence/studionet-2026-08-14.md).
 Bradbury identity and forecast receipts are recorded in
 [`docs/submission-evidence/bradbury-2026-08-14.md`](docs/submission-evidence/bradbury-2026-08-14.md).
+The clean-slate contract rotation is recorded in
+[`docs/submission-evidence/bradbury-reset-2026-08-15.md`](docs/submission-evidence/bradbury-reset-2026-08-15.md).
 
 ## Bradbury
 
 - Chain ID: `4221`
-- Contract: [`0x0d2527Fd9FFdC2fb648C55bb8dBf4Cb32452E51d`](https://explorer-bradbury.genlayer.com/address/0x0d2527Fd9FFdC2fb648C55bb8dBf4Cb32452E51d)
-- Deployment transaction: [`0x3956ffb…aa3a3`](https://explorer-bradbury.genlayer.com/transactions/0x3956ffb5379a36339719da05619f8be558e01d0939c8290927754e3bb20aa3a3)
+- Contract: [`0xA723aA83e6fd9d32E99Df853D0c0B7cbf0A3ceb8`](https://explorer-bradbury.genlayer.com/address/0xA723aA83e6fd9d32E99Df853D0c0B7cbf0A3ceb8)
+- Deployment transaction: [`0xa40f2283…c9fc8f`](https://explorer-bradbury.genlayer.com/tx/0xa40f2283cfa09a353a7c42639e14de0f20d4db9058f4643b34a0b33460c9fc8f)
 - Upgrade authority: `0x91B1b2D1f2De66400fcbeAEbadB8a5330eB28DC0`
+
+This contract began with zero users, markets, and predictions. The previous
+contract remains immutable and archived at
+[`0x0d2527Fd…52E51d`](https://explorer-bradbury.genlayer.com/address/0x0d2527Fd9FFdC2fb648C55bb8dBf4Cb32452E51d),
+but it is not read by the current application.
 
 The deployer is a dedicated CREDREP wallet and is registered onchain as the
 upgrade authority. Product users connect and sign with their own wallets; the

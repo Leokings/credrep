@@ -1,4 +1,4 @@
-import { count } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import { chainProfiles, sourcedMarkets } from "../../../db/schema";
 import { CREDENCE_CONTRACT_ADDRESS } from "../../../lib/deployment";
 import { createRequestLogger } from "../../../lib/server-logging";
@@ -10,8 +10,12 @@ export async function GET(request: Request) {
   try {
     const { getDb } = await import("../../../db");
     const db = getDb();
+    const contractAddress = CREDENCE_CONTRACT_ADDRESS.toLowerCase();
     const [profiles, markets] = await Promise.all([
-      db.select({ value: count() }).from(chainProfiles),
+      db
+        .select({ value: count() })
+        .from(chainProfiles)
+        .where(eq(chainProfiles.contractAddress, contractAddress)),
       db.select({ value: count() }).from(sourcedMarkets),
     ]);
     log.done(200);
