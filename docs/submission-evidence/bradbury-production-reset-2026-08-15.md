@@ -51,3 +51,20 @@ The previous contract
 [`0x3b77138d702e51069Fd3F66C3932606Af95053aB`](https://explorer-bradbury.genlayer.com/address/0x3b77138d702e51069Fd3F66C3932606Af95053aB)
 contained one user, one market, and one prediction when it was retired. It is no
 longer read by the current application.
+
+## Subsequent end-to-end production run
+
+After the clean deployment was documented, the product wallet completed a new
+production test on this contract. Each transaction finalized with
+`FINISHED_WITH_RETURN` and five validators:
+
+| Step | Submitted (UTC) | Transaction |
+| --- | --- | --- |
+| Create X challenge | `2026-08-15T12:10:55Z` | [`0x84fe…fbb6`](https://explorer-bradbury.genlayer.com/tx/0x84feffeb3dba8562682e375af5df87b28f13a94f7d268c2beb60b1c6d3adfbb6) |
+| Verify `@plain3rd` | `2026-08-15T12:11:41Z` | [`0xd397…2518`](https://explorer-bradbury.genlayer.com/tx/0xd39782e68a6d0cbf4612ebbfe1f42c1e4146199deb8940a0bb9a447498712518) |
+| Back `NO` with 2 REP | `2026-08-15T12:12:45Z` | [`0x88bf…4d21`](https://explorer-bradbury.genlayer.com/tx/0x88bf53ec5f40b0d6536c191bfe79ffa6eb3172d5292871335c2082bafc6b4d21) |
+
+The resulting state is one verified user, one sourced market, one open
+prediction, 100 total REP, 98 available REP, and 2 REP at risk. Full receipts
+and state reads are recorded in the
+[Bradbury end-to-end evidence](bradbury-2026-08-14.md#latest-production-result--2026-08-15).
