@@ -30,10 +30,10 @@ Character count: `891 / 1000`
 | Type | URL |
 | --- | --- |
 | GitHub Repository | `https://github.com/Leokings/credrep` |
-| GitHub File | `https://github.com/Leokings/credrep/blob/main/docs/submission-evidence/bradbury-final-reset-2026-08-15.md` |
+| GitHub File | `https://github.com/Leokings/credrep/blob/main/docs/submission-evidence/bradbury-production-reset-2026-08-15.md` |
 | GitHub File | `https://github.com/Leokings/credrep/blob/main/docs/submission-evidence/bradbury-2026-08-14.md` |
 | GitHub File | `https://github.com/Leokings/credrep/blob/main/docs/submission-evidence/studionet-2026-08-14.md` |
 | GenLayer Studio Contract | `https://studio.genlayer.com/contracts/0xd2fEE3F35Afcf44a04323bd4D4a9DbCca7887168` |
-| GenLayer Explorer Contract | `https://explorer-bradbury.genlayer.com/address/0x3b77138d702e51069Fd3F66C3932606Af95053aB` |
+| GenLayer Explorer Contract | `https://explorer-bradbury.genlayer.com/address/0x7aD0ca207FdD300801FaD7Df67DDb8A8A1E13dBd` |
 | X Post | `https://x.com/plain3rd/status/2088338889127637416` |
 | Other (live app) | `https://credrep.xyz` |

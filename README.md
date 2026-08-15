@@ -26,19 +26,19 @@ Hosted consensus-test evidence is recorded in
 [`docs/submission-evidence/studionet-2026-08-14.md`](docs/submission-evidence/studionet-2026-08-14.md).
 Bradbury identity and forecast receipts are recorded in
 [`docs/submission-evidence/bradbury-2026-08-14.md`](docs/submission-evidence/bradbury-2026-08-14.md).
-The current final clean-slate rotation is recorded in
-[`docs/submission-evidence/bradbury-final-reset-2026-08-15.md`](docs/submission-evidence/bradbury-final-reset-2026-08-15.md).
+The current production clean-slate rotation is recorded in
+[`docs/submission-evidence/bradbury-production-reset-2026-08-15.md`](docs/submission-evidence/bradbury-production-reset-2026-08-15.md).
 
 ## Bradbury
 
 - Chain ID: `4221`
-- Contract: [`0x3b77138d702e51069Fd3F66C3932606Af95053aB`](https://explorer-bradbury.genlayer.com/address/0x3b77138d702e51069Fd3F66C3932606Af95053aB)
-- Deployment transaction: [`0x94cd0a29…2eac7f`](https://explorer-bradbury.genlayer.com/tx/0x94cd0a2926c85182bf200ab0d06f231a880e6bd92b6b2cd9abf42203bc2eac7f)
+- Contract: [`0x7aD0ca207FdD300801FaD7Df67DDb8A8A1E13dBd`](https://explorer-bradbury.genlayer.com/address/0x7aD0ca207FdD300801FaD7Df67DDb8A8A1E13dBd)
+- Deployment transaction: [`0xeb18133c…577d7a`](https://explorer-bradbury.genlayer.com/tx/0xeb18133c1470fe956ea4c0e89cdc2e419f8ed9fe5e0959e21060ca1937577d7a)
 - Upgrade authority: `0x91B1b2D1f2De66400fcbeAEbadB8a5330eB28DC0`
 
 This contract began with zero users, markets, and predictions. The previous
 contract remains immutable and archived at
-[`0x35aC6436…048c77`](https://explorer-bradbury.genlayer.com/address/0x35aC6436e59814Eb48c12850429D7a4BE1048c77),
+[`0x3b77138d…053aB`](https://explorer-bradbury.genlayer.com/address/0x3b77138d702e51069Fd3F66C3932606Af95053aB),
 but it is not read by the current application.
 
 X binding and monthly reverification posts now use `credrep-bind:` and
