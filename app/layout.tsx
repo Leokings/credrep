@@ -18,24 +18,28 @@ const geistMono = Geist_Mono({
 export function generateMetadata(): Metadata {
   return {
     metadataBase: getSiteUrl(),
-    title: "Credence — Forecast with reputation",
+    applicationName: "CREDREP",
+    title: "CREDREP — Forecast with reputation",
     description:
       "Back live public questions with your own non-transferable reputation and build a calibration-aware prediction score.",
+    alternates: { canonical: "/" },
     openGraph: {
-      title: "Credence — Forecast with reputation",
+      type: "website",
+      siteName: "CREDREP",
+      url: "/",
+      title: "CREDREP — Forecast with reputation",
       description: "Live questions. Your REP. Your prediction record.",
-      images: [{ url: "/og-v2.png", width: 1200, height: 630 }],
     },
     twitter: {
       card: "summary_large_image",
-      title: "Credence — Forecast with reputation",
+      title: "CREDREP — Forecast with reputation",
       description: "Live questions. Your REP. Your prediction record.",
-      images: ["/og-v2.png"],
     },
     icons: {
       icon: "/favicon.svg",
       shortcut: "/favicon.svg",
     },
+    appleWebApp: { title: "CREDREP" },
   };
 }
 

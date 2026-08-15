@@ -957,9 +957,9 @@ export function CredenceApp() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <button className="brand" onClick={() => setView("feed")} aria-label="Credence home">
+        <button className="brand" onClick={() => setView("feed")} aria-label="CREDREP home">
           <span className="brand-mark"><MarkIcon /></span>
-          CREDENCE
+          CREDREP
         </button>
         <div className="header-actions">
           {wallet && (
@@ -1034,7 +1034,7 @@ export function CredenceApp() {
           </div>
         </section>
 
-        <nav className="view-tabs" aria-label="Credence views">
+        <nav className="view-tabs" aria-label="CREDREP views">
           <button className={view === "feed" ? "active" : ""} onClick={() => setView("feed")}>Live questions</button>
           <button className={view === "record" ? "active" : ""} onClick={() => setView("record")}>My record {positions.length ? `(${positions.length})` : ""}</button>
           <button className={view === "community" ? "active" : ""} onClick={() => setView("community")}>Community</button>
@@ -1064,7 +1064,7 @@ export function CredenceApp() {
             </div>
             {feed && (
               <p className="feed-footnote">
-                Questions from <a href="https://polymarket.com" target="_blank" rel="noreferrer">Polymarket</a>. No money, odds, or pool is copied into Credence.
+                Questions from <a href="https://polymarket.com" target="_blank" rel="noreferrer">Polymarket</a>. No money, odds, or pool is copied into CREDREP.
                 {feed.stale ? " Showing the latest cached feed." : ""}
               </p>
             )}
@@ -1220,7 +1220,7 @@ export function CredenceApp() {
       </main>
 
       <footer>
-        <span>Credence · Bradbury testnet</span>
+        <span>CREDREP · Bradbury testnet</span>
         <div><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/support">Support</a><a href={BRADBURY_FAUCET_URL} target="_blank" rel="noreferrer">Faucet</a><a href={BRADBURY_EXPLORER_URL} target="_blank" rel="noreferrer">Explorer</a><a href={`${BRADBURY_EXPLORER_URL}address/${CREDENCE_CONTRACT_ADDRESS}`} target="_blank" rel="noreferrer">Contract</a></div>
       </footer>
 

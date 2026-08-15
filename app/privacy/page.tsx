@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
 import { LegalPage } from "../../components/legal-page";
 
-export const metadata: Metadata = { title: "Privacy — Credence" };
+export const metadata: Metadata = { title: "Privacy — CREDREP" };
 
 export default function PrivacyPage() {
   return (
     <LegalPage eyebrow="PUBLIC BETA" title="Privacy notice">
       <section>
-        <h2>Data Credence processes</h2>
+        <h2>Data CREDREP processes</h2>
         <p>
-          Credence indexes public Bradbury data for connected wallet addresses,
+          CREDREP indexes public Bradbury data for connected wallet addresses,
           including public X handles and proof URLs recorded by the contract,
           REP balances, forecasts, confidence, and outcomes. The app also stores
           sourced market metadata and short-lived wallet authorization
@@ -21,7 +21,7 @@ export default function PrivacyPage() {
         <p>
           Index refreshes use a human-readable wallet signature. It cannot move
           funds, submit a transaction, or spend REP. A signed, HTTP-only session
-          cookie keeps the refresh active for up to seven days. Credence never
+          cookie keeps the refresh active for up to seven days. CREDREP never
           asks for or receives your wallet seed phrase or private key.
         </p>
       </section>

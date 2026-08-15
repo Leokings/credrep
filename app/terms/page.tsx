@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
 import { LegalPage } from "../../components/legal-page";
 
-export const metadata: Metadata = { title: "Terms — Credence" };
+export const metadata: Metadata = { title: "Terms — CREDREP" };
 
 export default function TermsPage() {
   return (
     <LegalPage eyebrow="PUBLIC BETA" title="Terms of use">
       <section>
-        <h2>What Credence is</h2>
+        <h2>What CREDREP is</h2>
         <p>
-          Credence is experimental social-forecasting software on the GenLayer
+          CREDREP is experimental social-forecasting software on the GenLayer
           Bradbury testnet. It lets one person back a forecast with that
           person&apos;s non-transferable reputation points. It is not a betting
           pool, exchange, sportsbook, or investment product.
@@ -38,7 +38,7 @@ export default function TermsPage() {
         <p>
           Wallet addresses, linked public X identity evidence, forecasts, and
           REP outcomes are public or derived from public testnet data. Market
-          questions come from external sources such as Polymarket. Credence is
+          questions come from external sources such as Polymarket. CREDREP is
           not affiliated with or endorsed by those sources, and their data may
           be delayed, changed, or unavailable.
         </p>

@@ -1,11 +1,11 @@
-# Credence
+# CREDREP
 
-Credence turns live public questions into personal, reputation-backed forecasts.
+CREDREP turns live public questions into personal, reputation-backed forecasts.
 The site sources active binary questions from Polymarket; users choose YES or
 NO and stake only their own non-transferable REP. There is no money, liquidity,
-counterparty, or payout pool in Credence.
+counterparty, or payout pool in CREDREP.
 
-**Live MVP:** [credence-signal.vercel.app](https://credence-signal.vercel.app)
+**Live MVP:** [credrep.xyz](https://credrep.xyz)
 
 - A verified X account starts with 100 REP.
 - Correct: return the stake plus an equal REP bonus.
@@ -34,7 +34,7 @@ Bradbury identity and forecast receipts are recorded in
 - Deployment transaction: [`0x3956ffb…aa3a3`](https://explorer-bradbury.genlayer.com/transactions/0x3956ffb5379a36339719da05619f8be558e01d0939c8290927754e3bb20aa3a3)
 - Upgrade authority: `0x91B1b2D1f2De66400fcbeAEbadB8a5330eB28DC0`
 
-The deployer is a dedicated Credence wallet and is registered onchain as the
+The deployer is a dedicated CREDREP wallet and is registered onchain as the
 upgrade authority. Product users connect and sign with their own wallets; the
 site never receives the deployer key.
 
@@ -87,7 +87,7 @@ writes are rate-limited by wallet and keyed network hash.
 
 The frontend requests account access, adds or switches to Bradbury when needed,
 signs the human-readable public-index authorization above, and submits
-zero-value calls to the Credence contract. It has no token or NFT approval path,
+zero-value calls to the CREDREP contract. It has no token or NFT approval path,
 no asset-transfer path, and never asks for a seed phrase or private key.
 
 See `ARCHITECTURE.md` for the trust and settlement boundaries.

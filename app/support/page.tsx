@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { LegalPage } from "../../components/legal-page";
 
-export const metadata: Metadata = { title: "Support — Credence" };
+export const metadata: Metadata = { title: "Support — CREDREP" };
 
 export default function SupportPage() {
   return (
@@ -25,7 +25,7 @@ export default function SupportPage() {
       <section>
         <h2>Never send secrets</h2>
         <p>
-          Credence support will never ask for a seed phrase, private key,
+          CREDREP support will never ask for a seed phrase, private key,
           password, recovery code, or remote control of your device. Anyone who
           asks for one is not providing legitimate support.
         </p>

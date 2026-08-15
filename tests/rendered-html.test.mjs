@@ -48,20 +48,21 @@ after(async () => {
   ]);
 });
 
-test("server-renders the Credence product", async () => {
+test("server-renders the CREDREP product", async () => {
   const response = await fetch(origin);
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   assert.equal(response.headers.get("x-frame-options"), "DENY");
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
   const html = await response.text();
-  assert.match(html, /<title>Credence/);
+  assert.match(html, /<title>CREDREP/);
   assert.match(html, /Forecast with reputation/);
   assert.match(html, /Live questions/);
   assert.match(html, /Community/);
   assert.match(html, /Prediction Score/);
   assert.match(html, /Bradbury/);
   assert.match(html, /Connect wallet/);
+  assert.match(html, /opengraph-image/);
   assert.doesNotMatch(html, /network-pill|Polymarket · Bradbury/);
   assert.doesNotMatch(
     html,
@@ -71,6 +72,13 @@ test("server-renders the Credence product", async () => {
     html,
     /codex-preview|react-loading-skeleton|Your site is taking shape/,
   );
+});
+
+test("serves the CREDREP social preview", async () => {
+  const response = await fetch(`${origin}/opengraph-image`);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /^image\/png\b/i);
+  assert.ok((await response.arrayBuffer()).byteLength > 10_000);
 });
 
 test("serves launch terms, privacy, and support pages", async () => {

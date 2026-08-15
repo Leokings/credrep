@@ -1,8 +1,8 @@
-# Credence StudioNet integration evidence
+# CREDREP StudioNet integration evidence
 
 ## Result
 
-**PASS** — the Credence intelligent contract deployed on GenLayer StudioNet,
+**PASS** — the CREDREP intelligent contract deployed on GenLayer StudioNet,
 fetched a live binary Polymarket question through validator consensus, stored
 the canonical market, and returned the expected governance configuration.
 

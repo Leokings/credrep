@@ -13,7 +13,7 @@ export function LegalPage({
   return (
     <main className="legal-shell">
       <Link className="legal-brand" href="/">
-        CREDENCE
+        CREDREP
       </Link>
       <article className="legal-card">
         <p className="eyebrow">{eyebrow}</p>

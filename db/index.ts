@@ -6,7 +6,7 @@ export function getDb() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error(
-      "DATABASE_URL is unavailable. Link the Credence Neon database before using persistence.",
+      "DATABASE_URL is unavailable. Link the CREDREP Neon database before using persistence.",
     );
   }
 

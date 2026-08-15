@@ -100,7 +100,7 @@ export async function issueIndexChallenge(request: Request, address: string) {
   const nonce = randomBytes(24).toString("hex");
   const origin = new URL(request.url).origin;
   const message = [
-    "Credence public-index authorization",
+    "CREDREP public-index authorization",
     "",
     `Origin: ${origin}`,
     `Wallet: ${walletAddress}`,

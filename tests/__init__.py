@@ -1,1 +1,1 @@
-"""Credence test package."""
+"""CREDREP test package."""

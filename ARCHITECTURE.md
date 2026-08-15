@@ -1,8 +1,8 @@
-# Credence architecture
+# CREDREP architecture
 
 ## Product boundary
 
-Polymarket supplies questions and final outcomes. Credence does not copy its
+Polymarket supplies questions and final outcomes. CREDREP does not copy its
 money, shares, liquidity, or odds. Every position belongs to one wallet and
 risks only that wallet's REP.
 
@@ -70,14 +70,14 @@ same-site session scoped to `/api/index` for seven days. The message explicitly
 cannot authorize a transaction or spend REP. Index and challenge endpoints are
 rate-limited separately by wallet and keyed network hash.
 
-The current Bradbury contract registers the dedicated Credence deployer as its
+The current Bradbury contract registers the dedicated CREDREP deployer as its
 upgrade authority. Future code upgrades must preserve the declared storage
 layout, and the deployed code and transaction remain publicly inspectable.
 
 ## Transaction lifecycle
 
 The browser requires Bradbury before enabling a write. Once a wallet submits a
-transaction, Credence stores its hash on that device, blocks duplicate writes,
+transaction, CREDREP stores its hash on that device, blocks duplicate writes,
 and restores the pending status after a refresh. The user can recheck it or open
 the Bradbury Explorer until the transaction reaches a terminal state.
 
