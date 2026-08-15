@@ -245,7 +245,7 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-export function CredenceApp() {
+export function CredrepApp() {
   const [feed, setFeed] = useState<MarketFeed | null>(null);
   const [feedError, setFeedError] = useState("");
   const [community, setCommunity] = useState<CommunityFeed | null>(null);

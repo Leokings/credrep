@@ -1,5 +1,5 @@
-import { CredenceApp } from "../components/credence-app";
+import { CredrepApp } from "../components/credrep-app";
 
 export default function Home() {
-  return <CredenceApp />;
+  return <CredrepApp />;
 }
