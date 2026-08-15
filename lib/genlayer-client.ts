@@ -28,6 +28,11 @@ type BrowserProvider = {
 
 type OnSubmitted = (transactionHash: `0x${string}`) => void;
 
+export type CredenceTransactionState = "PENDING" | "SUCCESS" | "FAILED";
+
+const TRANSACTION_POLL_INTERVAL_MS = 1_500;
+const TRANSACTION_POLL_RETRIES = 1_200;
+
 export type IdentityStatus =
   | "UNBOUND"
   | "PENDING"
@@ -244,10 +249,37 @@ export async function waitForCredenceTransaction(
   const receipt = await readClient.waitForTransactionReceipt({
     hash: transactionHash as Hash,
     status: TransactionStatus.ACCEPTED,
-    interval: 1_500,
-    retries: 160,
+    interval: TRANSACTION_POLL_INTERVAL_MS,
+    retries: TRANSACTION_POLL_RETRIES,
   });
   assertSuccessfulExecution(receipt, transactionHash);
+}
+
+export async function readCredenceTransactionState(
+  transactionHash: `0x${string}`,
+): Promise<CredenceTransactionState> {
+  try {
+    const receipt = await readClient.waitForTransactionReceipt({
+      hash: transactionHash as Hash,
+      status: TransactionStatus.ACCEPTED,
+      interval: 0,
+      retries: 0,
+    });
+    if (receipt.txExecutionResultName === ExecutionResult.FINISHED_WITH_ERROR) {
+      return "FAILED";
+    }
+    assertSuccessfulExecution(receipt, transactionHash);
+    return "SUCCESS";
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (
+      message.startsWith("Timed out waiting for transaction") ||
+      message.startsWith("Transaction not found")
+    ) {
+      return "PENDING";
+    }
+    throw error;
+  }
 }
 
 export async function readChainProfile(address: string): Promise<ChainProfile> {

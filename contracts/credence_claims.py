@@ -553,6 +553,7 @@ class CredrepForecasts(gl.Contract):
         )
         challenge = (
             f"credrep-{challenge_label}:{int(gl.message.chain_id)}:"
+            f"{_address_key(gl.message.contract_address)}:"
             f"{_address_key(account)}:{attempt}"
         )
         self.binding_attempts[account] = u256(attempt)

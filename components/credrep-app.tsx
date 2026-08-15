@@ -16,10 +16,10 @@ import {
   readBindingChallenge,
   readChainIdentity,
   readChainProfile,
+  readCredenceTransactionState,
   readProtocolStats,
   readUserPositions,
   switchToBradbury,
-  waitForCredenceTransaction,
   watchCredenceProvider,
   type BindingChallenge,
   type ChainIdentity,
@@ -58,6 +58,8 @@ type PendingAction = {
   status: "PENDING" | "FAILED";
   error: string;
 };
+
+const PENDING_RECONCILIATION_INTERVAL_MS = 4_000;
 
 const CATEGORIES: Array<"All" | MarketCategory> = [
   "All",
@@ -487,7 +489,16 @@ export function CredrepApp() {
     setBusy("pending-action");
     setNotice({ tone: "plain", text: "Checking transaction…" });
     try {
-      await waitForCredenceTransaction(action.transactionHash);
+      const transactionState = await readCredenceTransactionState(
+        action.transactionHash,
+      );
+      if (transactionState === "PENDING") {
+        setNotice({ tone: "plain", text: "Transaction pending." });
+        return;
+      }
+      if (transactionState === "FAILED") {
+        throw new CredenceTransactionExecutionError(action.transactionHash);
+      }
       await loadWallet(connected.address, true, connected);
       rememberPendingAction(connected.address, null);
       setNotice({ tone: "good", text: `${action.label} confirmed.` });
@@ -589,7 +600,16 @@ export function CredrepApp() {
     setIdentityOpen(true);
     setNotice({ tone: "plain", text: "Checking verification…" });
     try {
-      await waitForCredenceTransaction(attempt.transactionHash);
+      const transactionState = await readCredenceTransactionState(
+        attempt.transactionHash,
+      );
+      if (transactionState === "PENDING") {
+        setNotice({ tone: "plain", text: "Verification pending." });
+        return;
+      }
+      if (transactionState === "FAILED") {
+        throw new CredenceTransactionExecutionError(attempt.transactionHash);
+      }
       await loadWallet(connected.address, true, connected);
       rememberVerification(connected.address, null);
       setProofUrl("");
@@ -625,17 +645,12 @@ export function CredrepApp() {
   }
 
   async function connectWallet() {
-    let connectedWallet: ConnectedCredenceWallet | null = null;
-    let pendingAttempt: VerificationAttempt | null = null;
-    let storedAction: PendingAction | null = null;
     setBusy("connect");
     setNotice(null);
     try {
       const connected = await connectCredenceWallet();
-      connectedWallet = connected;
       const storedAttempt = readVerificationAttempt(connected.address);
-      pendingAttempt = storedAttempt?.status === "PENDING" ? storedAttempt : null;
-      storedAction = readPendingAction(connected.address);
+      const storedAction = readPendingAction(connected.address);
       setWallet(connected);
       setNetworkReady(true);
       setVerificationAttempt(storedAttempt);
@@ -659,11 +674,6 @@ export function CredrepApp() {
       setNotice({ tone: "bad", text: error instanceof Error ? error.message : "Could not connect wallet." });
     } finally {
       setBusy("");
-    }
-    if (connectedWallet && pendingAttempt) {
-      void checkVerification(connectedWallet, pendingAttempt);
-    } else if (connectedWallet && storedAction?.status === "PENDING") {
-      void checkPendingAction(connectedWallet, storedAction);
     }
   }
 
@@ -991,6 +1001,99 @@ export function CredrepApp() {
       },
     });
   }, [connectedAddress, loadWallet]);
+
+  useEffect(() => {
+    const action = pendingAction?.status === "PENDING" ? pendingAction : null;
+    const attempt = verificationAttempt?.status === "PENDING"
+      ? verificationAttempt
+      : null;
+    if (!wallet || !networkReady || (!action && !attempt)) return;
+
+    let disposed = false;
+    let checking = false;
+    const trackedTransaction = attempt?.transactionHash ?? action!.transactionHash;
+
+    const reconcileSubmittedTransaction = async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        const transactionState = await readCredenceTransactionState(
+          trackedTransaction,
+        );
+        if (disposed || transactionState === "PENDING") return;
+
+        if (transactionState === "FAILED") {
+          if (attempt) {
+            const failedAttempt: VerificationAttempt = {
+              ...attempt,
+              status: "FAILED",
+              error: "The transaction failed on-chain.",
+            };
+            setVerificationAttempt(failedAttempt);
+            writeVerificationAttempt(wallet.address, failedAttempt);
+            setNotice({
+              tone: "bad",
+              text: "Verification failed on-chain. No REP was awarded.",
+            });
+          } else if (action) {
+            const failedAction: PendingAction = {
+              ...action,
+              status: "FAILED",
+              error: "The transaction failed on-chain.",
+            };
+            setPendingAction(failedAction);
+            writePendingAction(wallet.address, failedAction);
+            setNotice({ tone: "bad", text: `${action.label} failed on-chain.` });
+          }
+          setBusy("");
+          return;
+        }
+
+        await loadWallet(wallet.address, false, wallet);
+        if (disposed) return;
+        setBusy("");
+
+        if (attempt) {
+          setVerificationAttempt(null);
+          writeVerificationAttempt(wallet.address, null);
+          setProofUrl("");
+          setIdentityOpen(false);
+          setNotice({
+            tone: "good",
+            text: attempt.purpose === "REVERIFY"
+              ? "X account reverified."
+              : "X account bound. You have 100 REP.",
+          });
+        } else if (action) {
+          setPendingAction(null);
+          writePendingAction(wallet.address, null);
+          if (action.kind === "X_CHALLENGE") {
+            setIdentityOpen(true);
+            setNotice({
+              tone: "good",
+              text: "Challenge ready. Post it exactly as shown.",
+            });
+          } else {
+            setNotice({ tone: "good", text: `${action.label} confirmed.` });
+          }
+        }
+      } catch {
+        // Temporary RPC failures are retried while the transaction stays pending.
+      } finally {
+        checking = false;
+      }
+    };
+
+    void reconcileSubmittedTransaction();
+    const reconciliationTimer = window.setInterval(
+      () => void reconcileSubmittedTransaction(),
+      PENDING_RECONCILIATION_INTERVAL_MS,
+    );
+    return () => {
+      disposed = true;
+      window.clearInterval(reconciliationTimer);
+    };
+  }, [loadWallet, networkReady, pendingAction, verificationAttempt, wallet]);
 
   useEffect(() => {
     if (!connectedAddress) return;
