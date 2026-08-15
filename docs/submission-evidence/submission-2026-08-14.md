@@ -21,7 +21,7 @@ positions, scoring, and settlement. The MVP includes monthly X reverification,
 recovery toward 100 only when REP is below 20, 30-day stale-market refunds,
 registered upgrade authority, a Neon public read model, wallet-signed indexing,
 a Vercel deployment, StudioNet integration evidence, and a successful Bradbury
-end-to-end X-verification and 1 REP forecast.
+end-to-end X-verification and 2 REP forecast.
 
 Character count: `891 / 1000`
 
@@ -30,10 +30,9 @@ Character count: `891 / 1000`
 | Type | URL |
 | --- | --- |
 | GitHub Repository | `https://github.com/Leokings/credrep` |
-| GitHub File | `https://github.com/Leokings/credrep/blob/main/docs/submission-evidence/bradbury-production-reset-2026-08-15.md` |
-| GitHub File | `https://github.com/Leokings/credrep/blob/main/docs/submission-evidence/bradbury-2026-08-14.md` |
+| GitHub File | `https://github.com/Leokings/credrep/blob/main/docs/submission-evidence/bradbury.md` |
 | GitHub File | `https://github.com/Leokings/credrep/blob/main/docs/submission-evidence/studionet-2026-08-14.md` |
 | GenLayer Studio Contract | `https://studio.genlayer.com/contracts/0xd2fEE3F35Afcf44a04323bd4D4a9DbCca7887168` |
 | GenLayer Explorer Contract | `https://explorer-bradbury.genlayer.com/address/0x7aD0ca207FdD300801FaD7Df67DDb8A8A1E13dBd` |
-| X Post | `https://x.com/plain3rd/status/2088338889127637416` |
+| X Post | `https://x.com/plain3rd/status/2088599434388983964` |
 | Other (live app) | `https://credrep.xyz` |
