@@ -374,7 +374,7 @@ def _canonical_market_resolution(payload: Any, expected_id: str) -> str:
     return _canonical_json({"id": expected_id, "outcome": outcome})
 
 
-class CredenceForecasts(gl.Contract):
+class CredrepForecasts(gl.Contract):
     starting_reputation: u256
     max_stake_bps: u256
     user_count: u256
@@ -489,7 +489,7 @@ class CredenceForecasts(gl.Contract):
                     headers={
                         "Accept": "text/html",
                         "Accept-Language": "en-US,en;q=0.9",
-                        "User-Agent": "Mozilla/5.0 Credence-Identity-Verifier/2.0",
+                        "User-Agent": "Mozilla/5.0 CREDREP-Identity-Verifier/3.0",
                     },
                 )
             except Exception:
@@ -552,7 +552,7 @@ class CredenceForecasts(gl.Contract):
             "bind" if purpose == CHALLENGE_PURPOSE_BIND else "reverify"
         )
         challenge = (
-            f"credence-{challenge_label}:{int(gl.message.chain_id)}:"
+            f"credrep-{challenge_label}:{int(gl.message.chain_id)}:"
             f"{_address_key(account)}:{attempt}"
         )
         self.binding_attempts[account] = u256(attempt)
@@ -762,7 +762,7 @@ class CredenceForecasts(gl.Contract):
                     url,
                     headers={
                         "Accept": "application/json",
-                        "User-Agent": "Credence-Market-Verifier/1.0",
+                        "User-Agent": "CREDREP-Market-Verifier/1.0",
                     },
                 )
             except Exception:

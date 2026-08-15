@@ -37,7 +37,9 @@ def x_post_html(
 def begin_binding(contract, vm, account):
     vm.sender = account
     contract.begin_x_binding()
-    return contract.get_binding_challenge(account)["challenge"]
+    challenge = contract.get_binding_challenge(account)["challenge"]
+    assert challenge.startswith("credrep-bind:")
+    return challenge
 
 
 def complete_binding(
@@ -278,6 +280,7 @@ def test_reverification_requires_fresh_post_from_same_x_account(
     direct_vm.sender = direct_alice
     credence.begin_x_reverification()
     challenge = credence.get_binding_challenge(direct_alice)["challenge"]
+    assert challenge.startswith("credrep-reverify:")
     tweet_id = "2042000000000000090"
     mock = x_post_html(
         tweet_id,

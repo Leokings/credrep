@@ -61,7 +61,7 @@ test("server-renders the CREDREP product", async () => {
   assert.match(html, /Community/);
   assert.match(html, /Prediction Score/);
   assert.match(html, /Bradbury/);
-  assert.match(html, /0xA723aA83e6fd9d32E99Df853D0c0B7cbf0A3ceb8/i);
+  assert.match(html, /0x35aC6436e59814Eb48c12850429D7a4BE1048c77/i);
   assert.match(html, /Connect wallet/);
   assert.match(html, /opengraph-image/);
   assert.doesNotMatch(html, /network-pill|Polymarket · Bradbury/);

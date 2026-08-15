@@ -17,7 +17,7 @@ def active_binary_market() -> dict:
         GAMMA_FEED,
         headers={
             "Accept": "application/json",
-            "User-Agent": "Credence-Market-Verifier/1.0",
+            "User-Agent": "CREDREP-Market-Verifier/1.0",
         },
     )
     with urlopen(request, timeout=30) as response:
