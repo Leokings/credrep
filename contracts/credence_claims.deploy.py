@@ -370,51 +370,51 @@ class CredrepForecasts(gl.Contract):
 		if not parsed['cast_hash'].startswith(hash_prefix):E('farcaster_cast_hash_mismatch')
 		if parsed['handle']!=expected_handle:E('farcaster_cast_author_mismatch')
 		return parsed
-	def _issue_x_challenge(self,account:G,purpose:A)->None:
+	def _issue_identity_challenge(self,account:G,purpose:A)->None:
 		now=N();current_challenge=self.pending_binding_challenges.get(account,'');current_expiry=C(self.pending_binding_expires_at.get(account,B(0)))
 		if current_challenge and now<=current_expiry:D('x_verification_challenge_active')
 		attempt=C(self.binding_attempts.get(account,B(0)))+1;challenge_label='bind'if purpose==o else'reverify';challenge=f"credrep-{challenge_label}:{C(gl.message.chain_id)}:{V(gl.message.contract_address)}:{V(account)}:{attempt}";self.binding_attempts[account]=B(attempt);self.pending_binding_challenges[account]=challenge;self.pending_binding_expires_at[account]=B(now+AK);self.pending_challenge_purposes[account]=purpose
-	def _clear_x_challenge(self,account:G)->None:self.pending_binding_challenges[account]='';self.pending_binding_expires_at[account]=B(0);self.pending_challenge_purposes[account]=''
+	def _clear_identity_challenge(self,account:G)->None:self.pending_binding_challenges[account]='';self.pending_binding_expires_at[account]=B(0);self.pending_challenge_purposes[account]=''
 	@gl.public.write
-	def begin_x_binding(self)->None:
+	def begin_identity_binding(self)->None:
 		account=gl.message.sender_address
 		if self.wallet_identity_ids.get(account,'')or self.registered.get(account,False):D('wallet_already_bound')
-		self._issue_x_challenge(account,o)
+		self._issue_identity_challenge(account,o)
 	@gl.public.write
-	def verify_x_binding(self,proof_url:A,farcaster_proof_url:A)->None:
+	def verify_identity_binding(self,proof_url:A,farcaster_proof_url:A)->None:
 		account=gl.message.sender_address
 		if self.wallet_identity_ids.get(account,'')or self.registered.get(account,False):D('wallet_already_bound')
 		challenge=self.pending_binding_challenges.get(account,'');purpose=self.pending_challenge_purposes.get(account,'')
-		if not challenge or purpose!=o:D('x_binding_challenge_missing')
+		if not challenge or purpose!=o:D('identity_binding_challenge_missing')
 		now=N()
-		if now>C(self.pending_binding_expires_at.get(account,B(0))):D('x_binding_challenge_expired')
+		if now>C(self.pending_binding_expires_at.get(account,B(0))):D('identity_binding_challenge_expired')
 		verified=self._run_x_proof_consensus(proof_url,challenge);farcaster_verified=self._run_farcaster_cast_consensus(farcaster_proof_url,challenge);identity_id=verified['identity_id'];existing_wallet=self.identity_wallet_addresses.get(identity_id,'')
 		if existing_wallet:D('x_identity_already_bound')
 		farcaster_fid=farcaster_verified['fid'];farcaster_existing_wallet=self.farcaster_fid_wallet_addresses.get(farcaster_fid,'')
 		if farcaster_existing_wallet:D('farcaster_identity_already_bound')
-		handle=verified['handle'];canonical_proof=f"https://x.com/{handle}/status/{verified["tweet_id"]}";self.wallet_identity_ids[account]=identity_id;self.identity_wallet_addresses[identity_id]=V(account);self.identity_handles[account]=handle;self.identity_proof_urls[account]=canonical_proof;farcaster_handle=farcaster_verified['handle'];self.wallet_farcaster_fids[account]=farcaster_fid;self.farcaster_fid_wallet_addresses[farcaster_fid]=V(account);self.farcaster_handles[account]=farcaster_handle;self.farcaster_proof_urls[account]=f"{n}{farcaster_handle}/{farcaster_verified["cast_hash"]}";self.identity_challenges[account]=challenge;self.identity_verified_at[account]=B(now);self.identity_verified_until[account]=B(now+k);self._clear_x_challenge(account);self._activate_user(account)
+		handle=verified['handle'];canonical_proof=f"https://x.com/{handle}/status/{verified["tweet_id"]}";self.wallet_identity_ids[account]=identity_id;self.identity_wallet_addresses[identity_id]=V(account);self.identity_handles[account]=handle;self.identity_proof_urls[account]=canonical_proof;farcaster_handle=farcaster_verified['handle'];self.wallet_farcaster_fids[account]=farcaster_fid;self.farcaster_fid_wallet_addresses[farcaster_fid]=V(account);self.farcaster_handles[account]=farcaster_handle;self.farcaster_proof_urls[account]=f"{n}{farcaster_handle}/{farcaster_verified["cast_hash"]}";self.identity_challenges[account]=challenge;self.identity_verified_at[account]=B(now);self.identity_verified_until[account]=B(now+k);self._clear_identity_challenge(account);self._activate_user(account)
 	@gl.public.write
-	def begin_x_reverification(self)->None:
+	def begin_identity_reverification(self)->None:
 		account=gl.message.sender_address;identity_id=self.wallet_identity_ids.get(account,'')
 		if not identity_id or not self.registered.get(account,False):D('x_identity_not_bound')
 		now=N();verified_until=C(self.identity_verified_until.get(account,B(0)));farcaster_fid=self.wallet_farcaster_fids.get(account,'')
 		if farcaster_fid and now+m<verified_until:D('x_reverification_not_due')
-		self._issue_x_challenge(account,p)
+		self._issue_identity_challenge(account,p)
 	@gl.public.write
-	def verify_x_reverification(self,proof_url:A,farcaster_proof_url:A)->None:
+	def verify_identity_reverification(self,proof_url:A,farcaster_proof_url:A)->None:
 		account=gl.message.sender_address;identity_id=self.wallet_identity_ids.get(account,'')
 		if not identity_id:D('x_identity_not_bound')
 		challenge=self.pending_binding_challenges.get(account,'');purpose=self.pending_challenge_purposes.get(account,'')
-		if not challenge or purpose!=p:D('x_reverification_challenge_missing')
+		if not challenge or purpose!=p:D('identity_reverification_challenge_missing')
 		now=N()
-		if now>C(self.pending_binding_expires_at.get(account,B(0))):D('x_reverification_challenge_expired')
+		if now>C(self.pending_binding_expires_at.get(account,B(0))):D('identity_reverification_challenge_expired')
 		verified=self._run_x_proof_consensus(proof_url,challenge);farcaster_verified=self._run_farcaster_cast_consensus(farcaster_proof_url,challenge)
 		if verified['identity_id']!=identity_id:D('x_identity_changed')
 		farcaster_fid=farcaster_verified['fid'];previous_farcaster_fid=self.wallet_farcaster_fids.get(account,'')
 		if previous_farcaster_fid and farcaster_fid!=previous_farcaster_fid:D('farcaster_identity_changed')
 		farcaster_existing_wallet=self.farcaster_fid_wallet_addresses.get(farcaster_fid,'')
 		if farcaster_existing_wallet and farcaster_existing_wallet!=V(account):D('farcaster_identity_already_bound')
-		handle=verified['handle'];self.identity_handles[account]=handle;self.identity_proof_urls[account]=f"https://x.com/{handle}/status/{verified["tweet_id"]}";farcaster_handle=farcaster_verified['handle'];self.wallet_farcaster_fids[account]=farcaster_fid;self.farcaster_fid_wallet_addresses[farcaster_fid]=V(account);self.farcaster_handles[account]=farcaster_handle;self.farcaster_proof_urls[account]=f"{n}{farcaster_handle}/{farcaster_verified["cast_hash"]}";self.identity_challenges[account]=challenge;self.identity_verified_at[account]=B(now);self.identity_verified_until[account]=B(now+k);self._clear_x_challenge(account)
+		handle=verified['handle'];self.identity_handles[account]=handle;self.identity_proof_urls[account]=f"https://x.com/{handle}/status/{verified["tweet_id"]}";farcaster_handle=farcaster_verified['handle'];self.wallet_farcaster_fids[account]=farcaster_fid;self.farcaster_fid_wallet_addresses[farcaster_fid]=V(account);self.farcaster_handles[account]=farcaster_handle;self.farcaster_proof_urls[account]=f"{n}{farcaster_handle}/{farcaster_verified["cast_hash"]}";self.identity_challenges[account]=challenge;self.identity_verified_at[account]=B(now);self.identity_verified_until[account]=B(now+k);self._clear_identity_challenge(account)
 	def _total_reputation(self,account:G)->C:return C(self.reputation_balances.get(account,B(0)))+C(self.reputation_at_risk.get(account,B(0)))
 	def _clear_recovery(self,account:G)->None:self.recovery_active[account]=False;self.recovery_next_at[account]=B(0)
 	def _maybe_start_recovery(self,account:G,now:C)->None:
@@ -605,7 +605,7 @@ class CredrepForecasts(gl.Contract):
 			confidence=C(self.position_confidence_bps[key]);probability_yes=confidence if selected==W else 10000-confidence;actual_yes=10000 if outcome==W else 0;error=abs(probability_yes-actual_yes);score=10000-error*error//10000;self.position_scores_bps[key]=B(score);self.user_score_sums[account]=B(C(self.user_score_sums.get(account,B(0)))+score);self.user_resolved_counts[account]=B(C(self.user_resolved_counts.get(account,B(0)))+1)
 		self.position_settled_at[key]=A(gl.message_raw['datetime']);self._maybe_start_recovery(account,N())
 	@gl.public.view
-	def get_binding_challenge(self,account:G)->K[A,I]:challenge=self.pending_binding_challenges.get(account,'');expires_at=C(self.pending_binding_expires_at.get(account,B(0)));now=N();return{'challenge':challenge,'expires_at':expires_at,'active':M(challenge)and now<=expires_at,'attempt':C(self.binding_attempts.get(account,B(0))),'purpose':self.pending_challenge_purposes.get(account,'')}
+	def get_identity_challenge(self,account:G)->K[A,I]:challenge=self.pending_binding_challenges.get(account,'');expires_at=C(self.pending_binding_expires_at.get(account,B(0)));now=N();return{'challenge':challenge,'expires_at':expires_at,'active':M(challenge)and now<=expires_at,'attempt':C(self.binding_attempts.get(account,B(0))),'purpose':self.pending_challenge_purposes.get(account,'')}
 	@gl.public.view
 	def get_identity_status(self,account:G)->K[A,I]:now=N();identity_id=self.wallet_identity_ids.get(account,'');farcaster_fid=self.wallet_farcaster_fids.get(account,'');verified_at=C(self.identity_verified_at.get(account,B(0)));verified_until=C(self.identity_verified_until.get(account,B(0)));status=self._identity_status_value(account,now);pending_challenge=self.pending_binding_challenges.get(account,'');pending_expires_at=C(self.pending_binding_expires_at.get(account,B(0)));pending_purpose=self.pending_challenge_purposes.get(account,'');return{'bound':M(identity_id),'dual_source_bound':M(identity_id)and M(farcaster_fid),'status':status,'handle':self.identity_handles.get(account,''),'identity_id':identity_id,'proof_url':self.identity_proof_urls.get(account,''),'farcaster_fid':farcaster_fid,'farcaster_handle':self.farcaster_handles.get(account,''),'farcaster_proof_url':self.farcaster_proof_urls.get(account,''),'challenge':self.identity_challenges.get(account,''),'verified_at':verified_at,'verified_until':verified_until,'grace_until':verified_until+l if verified_until>0 else 0,'reverification_due':M(identity_id)and(not farcaster_fid or now+m>=verified_until),'reverification_pending':M(pending_challenge)and now<=pending_expires_at and pending_purpose==p,'can_predict':status in(q,r)}
 	@gl.public.view
@@ -631,6 +631,6 @@ class CredrepForecasts(gl.Contract):
 	@gl.public.view
 	def get_user_profile(self,account:G)->K[A,I]:available=C(self.reputation_balances.get(account,B(0)));at_risk=C(self.reputation_at_risk.get(account,B(0)));resolved=C(self.user_resolved_counts.get(account,B(0)));correct=C(self.user_correct_counts.get(account,B(0)));now=N();identity_id=self.wallet_identity_ids.get(account,'');farcaster_fid=self.wallet_farcaster_fids.get(account,'');identity_status=self._identity_status_value(account,now);recovery_is_active=self.recovery_active.get(account,False);return{'registered':self.registered.get(account,False),'reputation':available+at_risk,'available_reputation':available,'reputation_at_risk':at_risk,'predictions_made':C(self.user_prediction_counts.get(account,B(0))),'open_predictions':C(self.user_open_prediction_counts.get(account,B(0))),'resolved_predictions':resolved,'correct_predictions':correct,'void_predictions':C(self.user_void_counts.get(account,B(0))),'accuracy_bps':correct*10000//resolved if resolved>0 else 0,'prediction_score_bps':C(self.user_score_sums.get(account,B(0)))//resolved if resolved>0 else 0,'x_identity_bound':M(identity_id),'x_identity_id':identity_id,'x_handle':self.identity_handles.get(account,''),'x_identity_status':identity_status,'x_verified_at':C(self.identity_verified_at.get(account,B(0))),'x_verified_until':C(self.identity_verified_until.get(account,B(0))),'farcaster_identity_bound':M(farcaster_fid),'farcaster_fid':farcaster_fid,'farcaster_handle':self.farcaster_handles.get(account,''),'dual_source_identity_bound':M(identity_id)and M(farcaster_fid),'recovery_active':recovery_is_active,'recovery_next_at':C(self.recovery_next_at.get(account,B(0))),'recoverable_reputation':self._recoverable_reputation(account,now),'recovered_reputation':C(self.user_recovered_reputation.get(account,B(0)))}
 	@gl.public.view
-	def get_protocol_stats(self)->K[A,C]:return{'users':C(self.user_count),'markets':C(self.market_count),'predictions':C(self.prediction_count),'starting_reputation':C(self.starting_reputation),'max_stake_bps':C(self.max_stake_bps),'total_bonus_minted':C(self.total_bonus_minted),'total_reputation_burned':C(self.total_reputation_burned),'total_reputation_recovered':C(self.total_reputation_recovered),'recovery_trigger_below':s,'recovery_target':g,'x_verification_validity_seconds':k,'x_verification_grace_seconds':l,'x_reverification_window_seconds':m,'market_void_timeout_seconds':h,'upgrade_delay_seconds':u}
+	def get_protocol_stats(self)->K[A,C]:return{'users':C(self.user_count),'markets':C(self.market_count),'predictions':C(self.prediction_count),'starting_reputation':C(self.starting_reputation),'max_stake_bps':C(self.max_stake_bps),'total_bonus_minted':C(self.total_bonus_minted),'total_reputation_burned':C(self.total_reputation_burned),'total_reputation_recovered':C(self.total_reputation_recovered),'recovery_trigger_below':s,'recovery_target':g,'identity_verification_validity_seconds':k,'identity_verification_grace_seconds':l,'x_reverification_window_seconds':m,'market_void_timeout_seconds':h,'upgrade_delay_seconds':u}
 	@gl.public.view
 	def get_governance(self)->K[A,I]:pending_hash=self.pending_upgrade_code_hash;return{'upgradeable':True,'upgrade_authority':A(self.upgrade_authority),'upgrade_delay_seconds':u,'upgrade_pending':M(pending_hash),'pending_upgrade_code_hash':pending_hash,'pending_upgrade_scheduled_at':C(self.pending_upgrade_scheduled_at),'pending_upgrade_execute_after':C(self.pending_upgrade_execute_after),'market_void_timeout_seconds':h}

@@ -50,7 +50,7 @@ type PendingActionKind =
   | "VOID"
   | "SETTLE"
   | "RECOVERY"
-  | "X_CHALLENGE";
+  | "IDENTITY_CHALLENGE";
 type PendingAction = {
   transactionHash: `0x${string}`;
   kind: PendingActionKind;
@@ -130,7 +130,7 @@ function readPendingAction(address: string): PendingAction | null {
       "VOID",
       "SETTLE",
       "RECOVERY",
-      "X_CHALLENGE",
+      "IDENTITY_CHALLENGE",
     ];
     if (
       typeof value.transactionHash !== "string" ||
@@ -779,14 +779,14 @@ export function CredrepApp() {
     rememberVerification(wallet.address, null);
     await runTrackedAction({
       busyKey: "identity",
-      kind: "X_CHALLENGE",
+      kind: "IDENTITY_CHALLENGE",
       label: identity?.bound ? "Create identity recheck" : "Create identity verification",
       pendingText: "Creating challenge…",
       successText: "Challenge ready. Post it exactly as shown.",
       execute: (onSubmitted) =>
         identity?.bound
-          ? wallet.beginXReverification(onSubmitted)
-          : wallet.beginXBinding(onSubmitted),
+          ? wallet.beginIdentityReverification(onSubmitted)
+          : wallet.beginIdentityBinding(onSubmitted),
     });
   }
 
@@ -841,13 +841,13 @@ export function CredrepApp() {
         });
       };
       if (purpose === "REVERIFY") {
-        await wallet.verifyXReverification(
+        await wallet.verifyIdentityReverification(
           canonicalProofUrl,
           canonicalFarcasterProofUrl,
           onSubmitted,
         );
       } else {
-        await wallet.verifyXBinding(
+        await wallet.verifyIdentityBinding(
           canonicalProofUrl,
           canonicalFarcasterProofUrl,
           onSubmitted,
@@ -1083,7 +1083,7 @@ export function CredrepApp() {
         } else if (action) {
           setPendingAction(null);
           writePendingAction(wallet.address, null);
-          if (action.kind === "X_CHALLENGE") {
+          if (action.kind === "IDENTITY_CHALLENGE") {
             setIdentityOpen(true);
             setNotice({
               tone: "good",

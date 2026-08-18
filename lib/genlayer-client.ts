@@ -5,7 +5,6 @@ import { studionet } from "genlayer-js/chains";
 import {
   type CalldataEncodable,
   CalldataAddress,
-  ExecutionResult,
   type Hash,
   TransactionStatus,
 } from "genlayer-js/types";
@@ -14,6 +13,7 @@ import {
   STUDIONET_CHAIN_ID,
   STUDIONET_EXPLORER_URL,
 } from "./deployment";
+import { genLayerExecutionOutcome } from "./genlayer-receipt";
 
 type ProviderListener = (value: unknown) => void;
 
@@ -31,7 +31,7 @@ type OnSubmitted = (transactionHash: `0x${string}`) => void;
 export type CredenceTransactionState = "PENDING" | "SUCCESS" | "FAILED";
 
 const TRANSACTION_POLL_INTERVAL_MS = 1_500;
-const TRANSACTION_POLL_RETRIES = 1_200;
+const TRANSACTION_POLL_RETRIES = 80;
 
 export type IdentityStatus =
   | "UNBOUND"
@@ -132,14 +132,14 @@ export type ChainPosition = {
 export type ConnectedCredenceWallet = {
   address: `0x${string}`;
   signIndexAuthorization(message: string): Promise<`0x${string}`>;
-  beginXBinding(onSubmitted?: OnSubmitted): Promise<`0x${string}`>;
-  verifyXBinding(
+  beginIdentityBinding(onSubmitted?: OnSubmitted): Promise<`0x${string}`>;
+  verifyIdentityBinding(
     proofUrl: string,
     farcasterProofUrl: string,
     onSubmitted?: OnSubmitted,
   ): Promise<`0x${string}`>;
-  beginXReverification(onSubmitted?: OnSubmitted): Promise<`0x${string}`>;
-  verifyXReverification(
+  beginIdentityReverification(onSubmitted?: OnSubmitted): Promise<`0x${string}`>;
+  verifyIdentityReverification(
     proofUrl: string,
     farcasterProofUrl: string,
     onSubmitted?: OnSubmitted,
@@ -277,15 +277,15 @@ function toCalldataAddress(address: string) {
 }
 
 function assertSuccessfulExecution(
-  receipt: { txExecutionResultName?: string },
+  receipt: unknown,
   transactionHash: `0x${string}`,
 ) {
-  if (receipt.txExecutionResultName !== ExecutionResult.FINISHED_WITH_RETURN) {
-    if (receipt.txExecutionResultName === ExecutionResult.FINISHED_WITH_ERROR) {
-      throw new CredenceTransactionExecutionError(transactionHash);
-    }
-    throw new Error("Validator consensus did not finish successfully.");
+  const outcome = genLayerExecutionOutcome(receipt);
+  if (outcome === "SUCCESS") return;
+  if (outcome === "FAILED") {
+    throw new CredenceTransactionExecutionError(transactionHash);
   }
+  throw new Error("Validator consensus did not finish successfully.");
 }
 
 export async function waitForCredenceTransaction(
@@ -310,7 +310,7 @@ export async function readCredenceTransactionState(
       interval: 0,
       retries: 0,
     });
-    if (receipt.txExecutionResultName === ExecutionResult.FINISHED_WITH_ERROR) {
+    if (genLayerExecutionOutcome(receipt) === "FAILED") {
       return "FAILED";
     }
     assertSuccessfulExecution(receipt, transactionHash);
@@ -367,7 +367,7 @@ export async function readBindingChallenge(
   const raw = asRecord(
     await readClient.readContract({
       address: CREDREP_CONTRACT_ADDRESS,
-      functionName: "get_binding_challenge",
+      functionName: "get_identity_challenge",
       args: [toCalldataAddress(address)],
     }),
   );
@@ -612,13 +612,14 @@ export async function connectCredenceWallet(
       }
       return signature as `0x${string}`;
     },
-    beginXBinding: (onSubmitted) => write("begin_x_binding", [], onSubmitted),
-    verifyXBinding: (proofUrl, farcasterProofUrl, onSubmitted) =>
-      write("verify_x_binding", [proofUrl, farcasterProofUrl], onSubmitted),
-    beginXReverification: (onSubmitted) =>
-      write("begin_x_reverification", [], onSubmitted),
-    verifyXReverification: (proofUrl, farcasterProofUrl, onSubmitted) =>
-      write("verify_x_reverification", [proofUrl, farcasterProofUrl], onSubmitted),
+    beginIdentityBinding: (onSubmitted) =>
+      write("begin_identity_binding", [], onSubmitted),
+    verifyIdentityBinding: (proofUrl, farcasterProofUrl, onSubmitted) =>
+      write("verify_identity_binding", [proofUrl, farcasterProofUrl], onSubmitted),
+    beginIdentityReverification: (onSubmitted) =>
+      write("begin_identity_reverification", [], onSubmitted),
+    verifyIdentityReverification: (proofUrl, farcasterProofUrl, onSubmitted) =>
+      write("verify_identity_reverification", [proofUrl, farcasterProofUrl], onSubmitted),
     startRecovery: (onSubmitted) => write("start_recovery", [], onSubmitted),
     claimRecovery: (onSubmitted) => write("claim_recovery", [], onSubmitted),
     makePrediction: (

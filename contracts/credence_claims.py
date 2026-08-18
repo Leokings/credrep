@@ -24,9 +24,9 @@ POSITION_WON = "WON"
 POSITION_LOST = "LOST"
 POSITION_VOID = "VOID"
 
-X_CHALLENGE_VALIDITY_SECONDS = 7 * 24 * 60 * 60
-X_VERIFICATION_VALIDITY_SECONDS = 30 * 24 * 60 * 60
-X_VERIFICATION_GRACE_SECONDS = 7 * 24 * 60 * 60
+IDENTITY_CHALLENGE_VALIDITY_SECONDS = 7 * 24 * 60 * 60
+IDENTITY_VERIFICATION_VALIDITY_SECONDS = 30 * 24 * 60 * 60
+IDENTITY_VERIFICATION_GRACE_SECONDS = 7 * 24 * 60 * 60
 X_REVERIFICATION_WINDOW_SECONDS = 7 * 24 * 60 * 60
 MAX_X_PROOF_BYTES = 300_000
 MAX_X_TARGET_SECTION_BYTES = 50_000
@@ -734,7 +734,7 @@ class CredrepForecasts(gl.Contract):
         )
         if now <= verified_until:
             return IDENTITY_VERIFIED
-        if now <= verified_until + X_VERIFICATION_GRACE_SECONDS:
+        if now <= verified_until + IDENTITY_VERIFICATION_GRACE_SECONDS:
             return IDENTITY_GRACE
         return IDENTITY_STALE
 
@@ -893,7 +893,7 @@ class CredrepForecasts(gl.Contract):
             _transient("farcaster_cast_author_mismatch")
         return parsed
 
-    def _issue_x_challenge(self, account: Address, purpose: str) -> None:
+    def _issue_identity_challenge(self, account: Address, purpose: str) -> None:
         now = _now_unix()
         current_challenge = self.pending_binding_challenges.get(account, "")
         current_expiry = int(
@@ -914,26 +914,28 @@ class CredrepForecasts(gl.Contract):
         self.binding_attempts[account] = u256(attempt)
         self.pending_binding_challenges[account] = challenge
         self.pending_binding_expires_at[account] = u256(
-            now + X_CHALLENGE_VALIDITY_SECONDS
+            now + IDENTITY_CHALLENGE_VALIDITY_SECONDS
         )
         self.pending_challenge_purposes[account] = purpose
 
-    def _clear_x_challenge(self, account: Address) -> None:
+    def _clear_identity_challenge(self, account: Address) -> None:
         self.pending_binding_challenges[account] = ""
         self.pending_binding_expires_at[account] = u256(0)
         self.pending_challenge_purposes[account] = ""
 
     @gl.public.write
-    def begin_x_binding(self) -> None:
+    def begin_identity_binding(self) -> None:
         account = gl.message.sender_address
         if self.wallet_identity_ids.get(account, "") or self.registered.get(
             account, False
         ):
             _expected("wallet_already_bound")
-        self._issue_x_challenge(account, CHALLENGE_PURPOSE_BIND)
+        self._issue_identity_challenge(account, CHALLENGE_PURPOSE_BIND)
 
     @gl.public.write
-    def verify_x_binding(self, proof_url: str, farcaster_proof_url: str) -> None:
+    def verify_identity_binding(
+        self, proof_url: str, farcaster_proof_url: str
+    ) -> None:
         account = gl.message.sender_address
         if self.wallet_identity_ids.get(account, "") or self.registered.get(
             account, False
@@ -943,10 +945,10 @@ class CredrepForecasts(gl.Contract):
         challenge = self.pending_binding_challenges.get(account, "")
         purpose = self.pending_challenge_purposes.get(account, "")
         if not challenge or purpose != CHALLENGE_PURPOSE_BIND:
-            _expected("x_binding_challenge_missing")
+            _expected("identity_binding_challenge_missing")
         now = _now_unix()
         if now > int(self.pending_binding_expires_at.get(account, u256(0))):
-            _expected("x_binding_challenge_expired")
+            _expected("identity_binding_challenge_expired")
 
         verified = self._run_x_proof_consensus(proof_url, challenge)
         farcaster_verified = self._run_farcaster_cast_consensus(
@@ -984,13 +986,13 @@ class CredrepForecasts(gl.Contract):
         self.identity_challenges[account] = challenge
         self.identity_verified_at[account] = u256(now)
         self.identity_verified_until[account] = u256(
-            now + X_VERIFICATION_VALIDITY_SECONDS
+            now + IDENTITY_VERIFICATION_VALIDITY_SECONDS
         )
-        self._clear_x_challenge(account)
+        self._clear_identity_challenge(account)
         self._activate_user(account)
 
     @gl.public.write
-    def begin_x_reverification(self) -> None:
+    def begin_identity_reverification(self) -> None:
         account = gl.message.sender_address
         identity_id = self.wallet_identity_ids.get(account, "")
         if not identity_id or not self.registered.get(account, False):
@@ -1006,10 +1008,10 @@ class CredrepForecasts(gl.Contract):
             and now + X_REVERIFICATION_WINDOW_SECONDS < verified_until
         ):
             _expected("x_reverification_not_due")
-        self._issue_x_challenge(account, CHALLENGE_PURPOSE_REVERIFY)
+        self._issue_identity_challenge(account, CHALLENGE_PURPOSE_REVERIFY)
 
     @gl.public.write
-    def verify_x_reverification(
+    def verify_identity_reverification(
         self, proof_url: str, farcaster_proof_url: str
     ) -> None:
         account = gl.message.sender_address
@@ -1020,10 +1022,10 @@ class CredrepForecasts(gl.Contract):
         challenge = self.pending_binding_challenges.get(account, "")
         purpose = self.pending_challenge_purposes.get(account, "")
         if not challenge or purpose != CHALLENGE_PURPOSE_REVERIFY:
-            _expected("x_reverification_challenge_missing")
+            _expected("identity_reverification_challenge_missing")
         now = _now_unix()
         if now > int(self.pending_binding_expires_at.get(account, u256(0))):
-            _expected("x_reverification_challenge_expired")
+            _expected("identity_reverification_challenge_expired")
 
         verified = self._run_x_proof_consensus(proof_url, challenge)
         farcaster_verified = self._run_farcaster_cast_consensus(
@@ -1068,9 +1070,9 @@ class CredrepForecasts(gl.Contract):
         self.identity_challenges[account] = challenge
         self.identity_verified_at[account] = u256(now)
         self.identity_verified_until[account] = u256(
-            now + X_VERIFICATION_VALIDITY_SECONDS
+            now + IDENTITY_VERIFICATION_VALIDITY_SECONDS
         )
-        self._clear_x_challenge(account)
+        self._clear_identity_challenge(account)
 
     def _total_reputation(self, account: Address) -> int:
         return int(self.reputation_balances.get(account, u256(0))) + int(
@@ -1644,7 +1646,7 @@ class CredrepForecasts(gl.Contract):
         self._maybe_start_recovery(account, _now_unix())
 
     @gl.public.view
-    def get_binding_challenge(self, account: Address) -> dict[str, Any]:
+    def get_identity_challenge(self, account: Address) -> dict[str, Any]:
         challenge = self.pending_binding_challenges.get(account, "")
         expires_at = int(
             self.pending_binding_expires_at.get(account, u256(0))
@@ -1687,7 +1689,7 @@ class CredrepForecasts(gl.Contract):
             "verified_at": verified_at,
             "verified_until": verified_until,
             "grace_until": (
-                verified_until + X_VERIFICATION_GRACE_SECONDS
+                verified_until + IDENTITY_VERIFICATION_GRACE_SECONDS
                 if verified_until > 0
                 else 0
             ),
@@ -1851,8 +1853,8 @@ class CredrepForecasts(gl.Contract):
             ),
             "recovery_trigger_below": RECOVERY_TRIGGER_BELOW,
             "recovery_target": RECOVERY_TARGET,
-            "x_verification_validity_seconds": X_VERIFICATION_VALIDITY_SECONDS,
-            "x_verification_grace_seconds": X_VERIFICATION_GRACE_SECONDS,
+            "identity_verification_validity_seconds": IDENTITY_VERIFICATION_VALIDITY_SECONDS,
+            "identity_verification_grace_seconds": IDENTITY_VERIFICATION_GRACE_SECONDS,
             "x_reverification_window_seconds": X_REVERIFICATION_WINDOW_SECONDS,
             "market_void_timeout_seconds": MARKET_VOID_TIMEOUT_SECONDS,
             "upgrade_delay_seconds": UPGRADE_DELAY_SECONDS,

@@ -30,8 +30,8 @@ Hosted consensus-test evidence is recorded in
 ## StudioNet
 
 - Chain ID: `61999`
-- Contract: [`0xd86C67800071c245Bd7BED0AA8C7b34f9a45b868`](https://explorer-studio.genlayer.com/address/0xd86C67800071c245Bd7BED0AA8C7b34f9a45b868)
-- Deployment transaction: [`0xf3c7c4ef…37d44d83`](https://explorer-studio.genlayer.com/tx/0xf3c7c4ef3f706a969c994c635191643372fe72a092f0c54ac9e19f8f37d44d83)
+- Contract: [`0x3Aaed2C86b91013e97221dEEa4613eA211F8810f`](https://explorer-studio.genlayer.com/address/0x3Aaed2C86b91013e97221dEEa4613eA211F8810f)
+- Deployment transaction: [`0x3e13174a…bdfbc8c6`](https://explorer-studio.genlayer.com/tx/0x3e13174a96e25919f7bbb41d22bd9b68064e423cd5c787f2c96a7057bdfbc8c6)
 - Upgrade authority: `0x91B1b2D1f2De66400fcbeAEbadB8a5330eB28DC0`
 
 X and Farcaster binding and monthly reverification posts use `credrep-bind:`

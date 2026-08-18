@@ -1,7 +1,7 @@
 export const CREDREP_CONTRACT_ADDRESS =
-  "0xd86C67800071c245Bd7BED0AA8C7b34f9a45b868" as const;
+  "0x3Aaed2C86b91013e97221dEEa4613eA211F8810f" as const;
 export const CREDREP_DEPLOYMENT_TRANSACTION =
-  "0xf3c7c4ef3f706a969c994c635191643372fe72a092f0c54ac9e19f8f37d44d83" as const;
+  "0x3e13174a96e25919f7bbb41d22bd9b68064e423cd5c787f2c96a7057bdfbc8c6" as const;
 export const STUDIONET_EXPLORER_URL =
   "https://explorer-studio.genlayer.com/";
 export const STUDIONET_CHAIN_ID = 61999;

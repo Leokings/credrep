@@ -31,6 +31,6 @@ Character count: `908 / 1000`
 | --- | --- |
 | GitHub Repository | `https://github.com/Leokings/credrep` |
 | GitHub File | `https://github.com/Leokings/credrep/blob/main/docs/submission-evidence/studionet-2026-08-18.md` |
-| GenLayer Explorer Contract | `https://explorer-studio.genlayer.com/address/0xd86C67800071c245Bd7BED0AA8C7b34f9a45b868` |
-| GenLayer Explorer Transaction | `https://explorer-studio.genlayer.com/tx/0xf3c7c4ef3f706a969c994c635191643372fe72a092f0c54ac9e19f8f37d44d83` |
+| GenLayer Explorer Contract | `https://explorer-studio.genlayer.com/address/0x3Aaed2C86b91013e97221dEEa4613eA211F8810f` |
+| GenLayer Explorer Transaction | `https://explorer-studio.genlayer.com/tx/0x3e13174a96e25919f7bbb41d22bd9b68064e423cd5c787f2c96a7057bdfbc8c6` |
 | Other (live app) | `https://credrep.xyz` |

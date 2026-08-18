@@ -9,20 +9,20 @@ window.
 
 | Field | Value |
 | --- | --- |
-| Run time | 2026-08-18T06:21:00-07:00 |
+| Run time | 2026-08-18T07:14:00-07:00 |
 | Network | `studionet` |
 | RPC | `https://studio.genlayer.com/api` |
 | Leader-only mode | `false` |
 | Test runner | `genlayer-test 0.29.2`, `pytest 9.1.1` |
 | Python | `3.12.13` |
-| Production contract | [`0xd86C67800071c245Bd7BED0AA8C7b34f9a45b868`](https://explorer-studio.genlayer.com/address/0xd86C67800071c245Bd7BED0AA8C7b34f9a45b868) |
-| Production deployment | [`0xf3c7c4ef3f706a969c994c635191643372fe72a092f0c54ac9e19f8f37d44d83`](https://explorer-studio.genlayer.com/tx/0xf3c7c4ef3f706a969c994c635191643372fe72a092f0c54ac9e19f8f37d44d83) |
+| Production contract | [`0x3Aaed2C86b91013e97221dEEa4613eA211F8810f`](https://explorer-studio.genlayer.com/address/0x3Aaed2C86b91013e97221dEEa4613eA211F8810f) |
+| Production deployment | [`0x3e13174a96e25919f7bbb41d22bd9b68064e423cd5c787f2c96a7057bdfbc8c6`](https://explorer-studio.genlayer.com/tx/0x3e13174a96e25919f7bbb41d22bd9b68064e423cd5c787f2c96a7057bdfbc8c6) |
 | Fresh production state | `0 users / 0 markets / 0 predictions` |
 | Live Polymarket market ID | `2252245` |
-| Disposable integration contract | `0x490765CF50E3F70cA4CABe961294607347E13e09` |
-| Integration sync transaction | `0x9a134e0f1fe2b98ac929a741012e12c786aae072ea2a5b1b6b48d5beaf84b584` |
+| Disposable integration contract | `0x620b91820637d0f60BECF01F9537f7B740498c54` |
+| Integration sync transaction | `0x1217f371f8ee3e421b48090abc544f8ae42bc05a402fa37ace5d92a389d3666c` |
 | Leader execution result | `SUCCESS` |
-| Test duration | `50.26s` |
+| Test duration | `89.35s` |
 
 ## Tested assertions
 
@@ -54,10 +54,10 @@ StudioNet is gasless, so this test does not require funded GEN.
 
 ```text
 contracts/credence_claims.py
-SHA256 8CA03202AE9091164D98F9A961642BF01B490DF987687DCD6F13439ADF74B34B
+SHA256 CF35C67184C3318439F2C0BF53F8705218F456634B93B38A7DFA4A4F8C15A480
 
 contracts/credence_claims.deploy.py
-SHA256 F83CAC00D7BF656A50BC5F5B84D867A83CADFED5757A1ECD9B3AFD2C164A3317
+SHA256 1D60D0D81130B2DD848D0DCD6C577A589596DF1016A5FC26FC3AAAA0A82411CC
 
 tests/integration/test_credence_forecasts.py
 SHA256 3763D4B2147CF7F4CA0B093E7D3CA21DCC0DAD72024624A274714402E5AC003F
@@ -76,12 +76,12 @@ collected 1 item
 
 tests/integration/test_credence_forecasts.py::test_live_polymarket_question_reaches_genlayer_consensus
 EVIDENCE market_id=2252245
-EVIDENCE contract_address=0x490765CF50E3F70cA4CABe961294607347E13e09
-EVIDENCE sync_transaction=0x9a134e0f1fe2b98ac929a741012e12c786aae072ea2a5b1b6b48d5beaf84b584
+EVIDENCE contract_address=0x620b91820637d0f60BECF01F9537f7B740498c54
+EVIDENCE sync_transaction=0x1217f371f8ee3e421b48090abc544f8ae42bc05a402fa37ace5d92a389d3666c
 EVIDENCE sync_execution_result=SUCCESS
 PASSED
 
-============================= 1 passed in 50.26s ==============================
+======================== 1 passed in 89.35s (0:01:29) =========================
 INFO: File `gltest.config.yaml` found in the current directory, using it
 INFO: RPC URL: https://studio.genlayer.com/api
 INFO: Selected Network: studionet

@@ -98,8 +98,8 @@ def mock_farcaster_proof(
 
 def begin_binding(contract, vm, account):
     vm.sender = account
-    contract.begin_x_binding()
-    challenge = contract.get_binding_challenge(account)["challenge"]
+    contract.begin_identity_binding()
+    challenge = contract.get_identity_challenge(account)["challenge"]
     challenge_parts = challenge.split(":")
     assert challenge_parts[0] == "credrep-bind"
     assert len(challenge_parts) == 5
@@ -121,7 +121,7 @@ def complete_binding(
     farcaster_cast_hash="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     reply=False,
 ):
-    challenge = contract.get_binding_challenge(account)["challenge"]
+    challenge = contract.get_identity_challenge(account)["challenge"]
     proof_url = f"https://x.com/{handle}/status/{tweet_id}"
     vm.mock_web(
         rf".*status/{tweet_id}.*",
@@ -144,7 +144,7 @@ def complete_binding(
         cast_hash=farcaster_cast_hash,
     )
     vm.sender = account
-    contract.verify_x_binding(proof_url, farcaster_url)
+    contract.verify_identity_binding(proof_url, farcaster_url)
     return proof_url, challenge
 
 
@@ -336,7 +336,7 @@ def test_x_share_url_suffix_is_removed_before_verification(
 
     direct_vm.sender = direct_alice
     farcaster_url = mock_farcaster_proof(direct_vm, challenge)
-    credence.verify_x_binding(
+    credence.verify_identity_binding(
         f"https://x.com/credence_user/status/{tweet_id}?s=20#share",
         farcaster_url,
     )
@@ -361,7 +361,7 @@ def test_x_account_and_wallet_are_permanently_one_to_one(
     )
     direct_vm.sender = direct_alice
     with direct_vm.expect_revert("wallet_already_bound"):
-        credence.begin_x_binding()
+        credence.begin_identity_binding()
 
     begin_binding(credence, direct_vm, direct_bob)
     with direct_vm.expect_revert("x_identity_already_bound"):
@@ -441,7 +441,7 @@ def test_farcaster_cast_must_contain_the_same_exact_challenge(
     farcaster_url = mock_farcaster_proof(direct_vm, "different challenge")
     direct_vm.sender = direct_alice
     with direct_vm.expect_revert("farcaster_challenge_missing"):
-        credence.verify_x_binding(
+        credence.verify_identity_binding(
             f"https://x.com/credence_user/status/{tweet_id}",
             farcaster_url,
         )
@@ -464,8 +464,8 @@ def test_reverification_requires_fresh_post_from_same_x_account(
     register(credence, direct_vm, direct_alice)
     direct_vm.warp("2026-09-08T12:00:00+00:00")
     direct_vm.sender = direct_alice
-    credence.begin_x_reverification()
-    challenge = credence.get_binding_challenge(direct_alice)["challenge"]
+    credence.begin_identity_reverification()
+    challenge = credence.get_identity_challenge(direct_alice)["challenge"]
     challenge_parts = challenge.split(":")
     assert challenge_parts[0] == "credrep-reverify"
     assert len(challenge_parts) == 5
@@ -488,7 +488,7 @@ def test_reverification_requires_fresh_post_from_same_x_account(
         handle="credrep_new",
         cast_hash="0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     )
-    credence.verify_x_reverification(
+    credence.verify_identity_reverification(
         f"https://x.com/credence_new/status/{tweet_id}",
         farcaster_url,
     )
