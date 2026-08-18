@@ -39,10 +39,11 @@ n='https://farcaster.xyz/'
 AN='https://fnames.farcaster.xyz/transfers?name='
 AO=300000
 AP=100000
+AQ=132
 o='BIND'
 p='REVERIFY'
-AQ='UNBOUND'
-AR='PENDING'
+AR='UNBOUND'
+AS='PENDING'
 q='VERIFIED'
 r='GRACE'
 A6='STALE'
@@ -51,18 +52,18 @@ g=100
 A7=604800
 A8=86400
 h=2592000
-AS='https://gamma-api.polymarket.com/markets/'
-AT='https://polymarket.com/event/'
+AT='https://gamma-api.polymarket.com/markets/'
+AU='https://polymarket.com/event/'
 t='0x4D97DCd97eC945f40cF65F87097ACe5EA0476045'
-AU='https://polygon.drpc.org'
-AV='https://polygon.publicnode.com'
-AW='dd34de67'
+AV='https://polygon.drpc.org'
+AW='https://polygon.publicnode.com'
+AX='dd34de67'
 A9='0504c814'
 AA=200000
-AX=500
-AY=2000
-AZ=5000
-Aa=9500
+AY=500
+AZ=2000
+Aa=5000
+Ab=9500
 u=604800
 def D(message:A)->j:raise gl.vm.UserError(f"{c} {message}")
 def J(message:A)->j:raise gl.vm.UserError(f"{d} {message}")
@@ -76,7 +77,7 @@ def N()->C:
 	except(Q,R,A1):D('invalid_transaction_datetime')
 def b(value:I)->A:return T.dumps(value,sort_keys=True,separators=(',',':'))
 def V(account:G)->A:return A(account).lower()
-def Ab(raw:A)->tuple[A,A,A]:
+def Ac(raw:A)->tuple[A,A,A]:
 	value=raw.strip()
 	if H(value)<20 or H(value)>300 or not value.startswith('https://'):D('invalid_x_proof_url')
 	value=value.split('#',1)[0].split('?',1)[0];path=value[8:].strip('/');parts=path.split('/')
@@ -99,7 +100,7 @@ def AB(raw:A)->A:
 	identity_id=raw.strip()
 	if H(identity_id)<1 or H(identity_id)>32 or not identity_id.isdigit():E('x_identity_id_unreadable')
 	return identity_id
-def Ac(html:A,tweet_id:A,challenge:A)->A:
+def Ad(html:A,tweet_id:A,challenge:A)->A:
 	tweet_marker=f'__typename:"Tweet",rest_id:"{tweet_id}"';start=html.find(tweet_marker)
 	if start<0:E('x_proof_post_unreadable')
 	next_start=html.find('__typename:"Tweet",rest_id:"',start+H(tweet_marker));hard_end=Y(H(html),start+AM);end=hard_end if next_start<0 else Y(hard_end,next_start);section=html[start:end];header=section[:3000]
@@ -119,7 +120,7 @@ def Ac(html:A,tweet_id:A,challenge:A)->A:
 	handle_start+=H(handle_marker);handle_end=section.find('"',handle_start)
 	if handle_end<0:E('x_handle_unreadable')
 	handle=v(section[handle_start:handle_end]);return b({'handle':handle,'identity_id':identity_id,'tweet_id':tweet_id,'valid':True})
-def Ad(raw:A)->K[A,A]:
+def Ae(raw:A)->K[A,A]:
 	try:parsed=T.loads(raw)
 	except(Q,R):E('x_consensus_result_unreadable')
 	if not L(parsed,K)or parsed.get('valid')is not True:E('x_consensus_result_unreadable')
@@ -144,13 +145,13 @@ def x(raw:I,minimum_hex_length:C)->A:
 	for character in value[2:]:
 		if not(character.isascii()and(character.isdigit()or character in'abcdef')):D('invalid_farcaster_cast_hash')
 	return value
-def Ae(raw:A)->tuple[A,A,A]:
+def Af(raw:A)->tuple[A,A,A]:
 	value=raw.strip()
 	if H(value)<30 or H(value)>300 or not value.startswith('https://'):D('invalid_farcaster_cast_url')
 	value=value.split('#',1)[0].split('?',1)[0];path=value[8:].strip('/');parts=path.split('/')
 	if H(parts)!=3 or parts[0].lower()!='farcaster.xyz':D('invalid_farcaster_cast_url')
 	handle=i(parts[1]);hash_prefix=x(parts[2],8);return f"{n}{handle}/{hash_prefix}",handle,hash_prefix
-def Af(html:A,expected_handle:A,hash_prefix:A,challenge:A)->A:
+def Ag(html:A,expected_handle:A,hash_prefix:A,challenge:A)->A:
 	marker='id="__NEXT_DATA__"';marker_start=html.find(marker)
 	if marker_start<0:E('farcaster_cast_data_unreadable')
 	json_start=html.find('>',marker_start);json_end=html.find('</script>',json_start+1)
@@ -166,7 +167,7 @@ def Af(html:A,expected_handle:A,hash_prefix:A,challenge:A)->A:
 	author_data=P(K[A,I],author);handle=i(A(author_data.get('username','')))
 	if handle!=expected_handle:D('farcaster_cast_author_mismatch')
 	fid=w(author_data.get('fid',''));return b({'cast_hash':cast_hash,'fid':fid,'handle':handle,'valid':True})
-def Ag(payload:I,handle:A,fid:A)->None:
+def Ah(payload:I,handle:A,fid:A)->None:
 	if not L(payload,K):J('invalid_farcaster_fname_response')
 	transfers=P(K[A,I],payload).get('transfers')
 	if not L(transfers,S):J('invalid_farcaster_fname_response')
@@ -179,7 +180,7 @@ def Ag(payload:I,handle:A,fid:A)->None:
 	if i(A(transfer.get('username','')))!=handle:J('farcaster_fname_mismatch')
 	if w(transfer.get('to',''))!=fid:J('farcaster_fname_fid_mismatch')
 	server_signature=A(transfer.get('server_signature','')).strip().lower()
-	if H(server_signature)!=130 or not server_signature.startswith('0x'):J('farcaster_fname_signature_unreadable')
+	if H(server_signature)!=AQ or not server_signature.startswith('0x'):J('farcaster_fname_signature_unreadable')
 	for character in server_signature[2:]:
 		if not(character.isascii()and(character.isdigit()or character in'abcdef')):J('farcaster_fname_signature_unreadable')
 def AC(raw:A)->K[A,A]:
@@ -200,12 +201,12 @@ def f(raw:I)->A:
 		if not(character.isascii()and(character.isdigit()or character in'abcdef')):J('invalid_polymarket_condition_id')
 	if value[2:]=='0'*64:J('invalid_polymarket_condition_id')
 	return value
-def Ah(raw:A)->A:
+def Ai(raw:A)->A:
 	value=raw.strip().upper()
 	if value not in(W,a):D('invalid_prediction')
 	return value
 def y(account:G,market_id:A)->A:return f"{V(account)}|{market_id}"
-def Ai(raw:I)->A:
+def Aj(raw:I)->A:
 	value=A(raw).strip().lower()
 	if H(value)<1 or H(value)>200:J('invalid_polymarket_slug')
 	for character in value:
@@ -215,7 +216,7 @@ def AD(raw:I,label:A,minimum:C,maximum:C)->A:
 	value=' '.join(A(raw).strip().split())
 	if H(value)<minimum:J(f"invalid_polymarket_{label}")
 	return value[:maximum]
-def Aj(raw:I)->C:
+def Ak(raw:I)->C:
 	try:
 		parsed=A3.fromisoformat(A(raw).replace('Z','+00:00'))
 		if parsed.tzinfo is None:J('invalid_polymarket_end_time')
@@ -228,7 +229,7 @@ def z(raw:I,label:A)->S[I]:
 		except(Q,R):J(f"invalid_polymarket_{label}")
 	if not L(parsed,S):J(f"invalid_polymarket_{label}")
 	return P(S[I],parsed)
-def Ak(payload:I,expected_id:A,now:C)->A:
+def Al(payload:I,expected_id:A,now:C)->A:
 	if not L(payload,K):J('invalid_polymarket_response')
 	market=P(K[A,I],payload);returned_id=A(market.get('id','')).strip()
 	if returned_id!=expected_id:J('polymarket_id_mismatch')
@@ -236,23 +237,23 @@ def Ak(payload:I,expected_id:A,now:C)->A:
 	if outcomes!=[W,a]:D('market_is_not_binary_yes_no')
 	if market.get('active')is not True or market.get('closed')is True:D('market_not_active')
 	if market.get('acceptingOrders')is not True:D('market_not_accepting_predictions')
-	end_time=Aj(market.get('endDate'))
+	end_time=Ak(market.get('endDate'))
 	if end_time<=now+60:D('market_prediction_window_closed')
-	slug=Ai(market.get('slug',''));question=AD(market.get('question',''),'question',5,AX);description=AD(market.get('description','No additional rules supplied.'),'description',1,AY);condition_id=f(market.get('conditionId',''));return b({'condition_id':condition_id,'description':description,'end_time':end_time,'id':returned_id,'question':question,'slug':slug,'source_url':f"{AT}{slug}"})
-def Al(raw:I)->A:
+	slug=Aj(market.get('slug',''));question=AD(market.get('question',''),'question',5,AY);description=AD(market.get('description','No additional rules supplied.'),'description',1,AZ);condition_id=f(market.get('conditionId',''));return b({'condition_id':condition_id,'description':description,'end_time':end_time,'id':returned_id,'question':question,'slug':slug,'source_url':f"{AU}{slug}"})
+def Am(raw:I)->A:
 	value=A(raw).strip();normalized=value.rstrip('0').rstrip('.')if'.'in value else value
 	if normalized in('','0'):return'0'
 	if normalized=='0.5':return normalized
 	if normalized=='1':return normalized
 	E('polymarket_outcome_not_final')
-def Am(payload:I,expected_id:A)->A:
+def An(payload:I,expected_id:A)->A:
 	if not L(payload,K):J('invalid_polymarket_response')
 	market=P(K[A,I],payload)
 	if A(market.get('id','')).strip()!=expected_id:J('polymarket_id_mismatch')
 	outcomes=[A(value).strip().upper()for value in z(market.get('outcomes'),'outcomes')]
 	if outcomes!=[W,a]:D('market_is_not_binary_yes_no')
 	if market.get('closed')is not True:E('polymarket_market_not_resolved')
-	condition_id=f(market.get('conditionId',''));prices=[Al(value)for value in z(market.get('outcomePrices'),'outcome_prices')]
+	condition_id=f(market.get('conditionId',''));prices=[Am(value)for value in z(market.get('outcomePrices'),'outcome_prices')]
 	if prices==['1','0']:outcome=W
 	elif prices==['0','1']:outcome=a
 	elif prices==['0.5','0.5']:outcome=Z
@@ -275,7 +276,7 @@ def A0(payload:I,request_id:C)->C:
 	for character in hexadecimal.lower():
 		if not(character.isascii()and(character.isdigit()or character in'abcdef')):J('invalid_polygon_rpc_result')
 	return C(hexadecimal,16)
-def An(payload:I,condition_id:A)->A:
+def Ao(payload:I,condition_id:A)->A:
 	denominator=A0(payload,1);yes_numerator=A0(payload,2);no_numerator=A0(payload,3)
 	if denominator==0:E('ctf_condition_not_resolved')
 	if yes_numerator+no_numerator!=denominator:E('ctf_payout_vector_invalid')
@@ -284,7 +285,7 @@ def An(payload:I,condition_id:A)->A:
 	elif yes_numerator==no_numerator and yes_numerator>0:outcome=Z
 	else:E('ctf_payout_vector_unsupported')
 	return b({'condition_id':condition_id,'denominator':denominator,'no_numerator':no_numerator,'outcome':outcome,'yes_numerator':yes_numerator})
-def Ao(raw:A)->A:
+def Ap(raw:A)->A:
 	value=raw.strip().lower()
 	if value.startswith('0x'):value=value[2:]
 	if H(value)!=64:D('invalid_upgrade_code_hash')
@@ -304,8 +305,8 @@ class CredrepForecasts(gl.Contract):
 	def _identity_status_value(self,account:G,now:C)->A:
 		if not self.wallet_identity_ids.get(account,''):
 			challenge=self.pending_binding_challenges.get(account,'');expires_at=C(self.pending_binding_expires_at.get(account,B(0)))
-			if challenge and now<=expires_at:return AR
-			return AQ
+			if challenge and now<=expires_at:return AS
+			return AR
 		if not self.wallet_farcaster_fids.get(account,''):return A6
 		verified_until=C(self.identity_verified_until.get(account,B(0)))
 		if now<=verified_until:return q
@@ -315,13 +316,13 @@ class CredrepForecasts(gl.Contract):
 		status=self._identity_status_value(account,N())
 		if status not in(q,r):D('x_identity_verification_required')
 	def _run_x_proof_consensus(self,proof_url:A,challenge:A)->K[A,A]:
-		normalized_url,_,tweet_id=Ab(proof_url)
+		normalized_url,_,tweet_id=Ac(proof_url)
 		def leader_fn()->A:
 			try:response=gl.nondet.web.get(normalized_url,headers={'Accept':'text/html','Accept-Language':'en-US,en;q=0.9','User-Agent':'Mozilla/5.0 CREDREP-Identity-Verifier/3.0'})
 			except O:E('x_proof_fetch_failed')
 			if response.status==429 or response.status>=500:E(f"x_proof_http_{response.status}")
 			if response.status!=200 or response.body is None:J(f"x_proof_http_{response.status}")
-			html=response.body[:AL].decode('utf-8',errors='replace');return Ac(html,tweet_id,challenge)
+			html=response.body[:AL].decode('utf-8',errors='replace');return Ad(html,tweet_id,challenge)
 		def validator_fn(leaders_res:gl.vm.Result[A])->M:
 			if not L(leaders_res,gl.vm.Return):
 				if not L(leaders_res,gl.vm.UserError):return False
@@ -335,24 +336,24 @@ class CredrepForecasts(gl.Contract):
 				except O:return False
 			try:leader_result=A(leaders_res.calldata);validator_result=leader_fn();return leader_result==validator_result
 			except O:return False
-		result=A(gl.vm.run_nondet_unsafe(leader_fn,validator_fn));parsed=Ad(result)
+		result=A(gl.vm.run_nondet_unsafe(leader_fn,validator_fn));parsed=Ae(result)
 		if parsed['tweet_id']!=tweet_id:E('x_post_id_mismatch')
 		return parsed
 	def _run_farcaster_cast_consensus(self,proof_url:A,challenge:A)->K[A,A]:
-		normalized_url,expected_handle,hash_prefix=Ae(proof_url);fname_url=f"{AN}{expected_handle}"
+		normalized_url,expected_handle,hash_prefix=Af(proof_url);fname_url=f"{AN}{expected_handle}"
 		def leader_fn()->A:
 			try:response=gl.nondet.web.get(normalized_url,headers={'Accept':'text/html','Accept-Language':'en-US,en;q=0.9','User-Agent':'Twitterbot/1.0'})
 			except O:E('farcaster_cast_fetch_failed')
 			if response.status==429 or response.status>=500:E(f"farcaster_cast_http_{response.status}")
 			if response.status!=200 or response.body is None:J(f"farcaster_cast_http_{response.status}")
-			html=response.body[:AO].decode('utf-8',errors='replace');result=Af(html,expected_handle,hash_prefix,challenge);identity=AC(result)
+			html=response.body[:AO].decode('utf-8',errors='replace');result=Ag(html,expected_handle,hash_prefix,challenge);identity=AC(result)
 			try:fname_response=gl.nondet.web.get(fname_url,headers={'Accept':'application/json','User-Agent':'CREDREP-Identity-Verifier/4.0'})
 			except O:E('farcaster_fname_fetch_failed')
 			if fname_response.status==429 or fname_response.status>=500:E(f"farcaster_fname_http_{fname_response.status}")
 			if fname_response.status!=200 or fname_response.body is None:J(f"farcaster_fname_http_{fname_response.status}")
 			try:payload=T.loads(fname_response.body[:AP].decode('utf-8',errors='strict'))
 			except(Q,A2,R):J('invalid_farcaster_fname_response')
-			Ag(payload,identity['handle'],identity['fid']);return result
+			Ah(payload,identity['handle'],identity['fid']);return result
 		def validator_fn(leaders_res:gl.vm.Result[A])->M:
 			if not L(leaders_res,gl.vm.Return):
 				if not L(leaders_res,gl.vm.UserError):return False
@@ -454,7 +455,7 @@ class CredrepForecasts(gl.Contract):
 		if self._total_reputation(account)>=g:self._clear_recovery(account)
 		else:previous_next=C(self.recovery_next_at.get(account,B(0)));self.recovery_next_at[account]=B(previous_next+amount*A8)
 	def _run_polymarket_consensus(self,market_id:A,mode:A,now:C)->K[A,I]:
-		url=f"{AS}{market_id}"
+		url=f"{AT}{market_id}"
 		def leader_fn()->A:
 			try:response=gl.nondet.web.get(url,headers={'Accept':'application/json','User-Agent':'CREDREP-Market-Verifier/1.0'})
 			except O:E('polymarket_fetch_failed')
@@ -462,8 +463,8 @@ class CredrepForecasts(gl.Contract):
 			if response.status!=200 or response.body is None:J(f"polymarket_http_{response.status}")
 			try:payload=T.loads(response.body[:AA].decode('utf-8',errors='strict'))
 			except(Q,A2,R):J('invalid_polymarket_response')
-			if mode=='ACTIVE':return Ak(payload,market_id,now)
-			if mode=='RESOLVE':return Am(payload,market_id)
+			if mode=='ACTIVE':return Al(payload,market_id,now)
+			if mode=='RESOLVE':return An(payload,market_id)
 			D('invalid_market_consensus_mode')
 		def validator_fn(leaders_res:gl.vm.Result[A])->M:
 			if not L(leaders_res,gl.vm.Return):
@@ -484,17 +485,17 @@ class CredrepForecasts(gl.Contract):
 		if not L(parsed,K):E('polymarket_consensus_result_unreadable')
 		return P(K[A,I],parsed)
 	def _run_ctf_consensus(self,condition_id:A)->K[A,I]:
-		normalized_condition_id=f(condition_id);condition_hex=normalized_condition_id[2:];zero_index='0'*64;one_index='0'*63+'1';calls=[{'id':1,'jsonrpc':'2.0','method':'eth_call','params':[{'data':'0x'+AW+condition_hex,'to':t},'latest']},{'id':2,'jsonrpc':'2.0','method':'eth_call','params':[{'data':'0x'+A9+condition_hex+zero_index,'to':t},'latest']},{'id':3,'jsonrpc':'2.0','method':'eth_call','params':[{'data':'0x'+A9+condition_hex+one_index,'to':t},'latest']}];body=b(calls).encode('utf-8')
+		normalized_condition_id=f(condition_id);condition_hex=normalized_condition_id[2:];zero_index='0'*64;one_index='0'*63+'1';calls=[{'id':1,'jsonrpc':'2.0','method':'eth_call','params':[{'data':'0x'+AX+condition_hex,'to':t},'latest']},{'id':2,'jsonrpc':'2.0','method':'eth_call','params':[{'data':'0x'+A9+condition_hex+zero_index,'to':t},'latest']},{'id':3,'jsonrpc':'2.0','method':'eth_call','params':[{'data':'0x'+A9+condition_hex+one_index,'to':t},'latest']}];body=b(calls).encode('utf-8')
 		def leader_fn()->A:
 			results:S[A]=[]
-			for url in(AU,AV):
+			for url in(AV,AW):
 				try:response=gl.nondet.web.post(url,body=body,headers={'Accept':'application/json','Content-Type':'application/json','User-Agent':'CREDREP-Settlement-Verifier/1.0'})
 				except O:E('polygon_rpc_fetch_failed')
 				if response.status==429 or response.status>=500:E(f"polygon_rpc_http_{response.status}")
 				if response.status!=200 or response.body is None:J(f"polygon_rpc_http_{response.status}")
 				try:payload=T.loads(response.body[:AA].decode('utf-8',errors='strict'))
 				except(Q,A2,R):J('invalid_polygon_rpc_response')
-				results.append(An(payload,normalized_condition_id))
+				results.append(Ao(payload,normalized_condition_id))
 			if results[0]!=results[1]:E('polygon_rpc_provider_disagreement')
 			return results[0]
 		def validator_fn(leaders_res:gl.vm.Result[A])->M:
@@ -531,8 +532,8 @@ class CredrepForecasts(gl.Contract):
 	def make_prediction(self,market_id:A,prediction:A,confidence_bps:B,stake:B)->None:
 		account=gl.message.sender_address
 		if not self.registered.get(account,False):D('user_not_registered')
-		self._require_identity_active(account);normalized_id=X(market_id);selected=Ah(prediction);confidence=C(confidence_bps)
-		if confidence<AZ or confidence>Aa:D('confidence_out_of_range')
+		self._require_identity_active(account);normalized_id=X(market_id);selected=Ai(prediction);confidence=C(confidence_bps)
+		if confidence<Aa or confidence>Ab:D('confidence_out_of_range')
 		key=y(account,normalized_id)
 		if self.position_exists.get(key,False):D('prediction_already_exists')
 		now=N();market=self._run_polymarket_consensus(normalized_id,'ACTIVE',now);self._store_or_verify_market(normalized_id,market)
@@ -568,7 +569,7 @@ class CredrepForecasts(gl.Contract):
 	@gl.public.write
 	def schedule_upgrade(self,code_hash:A)->None:
 		if gl.message.sender_address!=self.upgrade_authority:D('only_upgrade_authority')
-		normalized_hash=Ao(code_hash);now=N();self.pending_upgrade_code_hash=normalized_hash;self.pending_upgrade_scheduled_at=B(now);self.pending_upgrade_execute_after=B(now+u)
+		normalized_hash=Ap(code_hash);now=N();self.pending_upgrade_code_hash=normalized_hash;self.pending_upgrade_scheduled_at=B(now);self.pending_upgrade_execute_after=B(now+u)
 	@gl.public.write
 	def cancel_upgrade(self)->None:
 		if gl.message.sender_address!=self.upgrade_authority:D('only_upgrade_authority')

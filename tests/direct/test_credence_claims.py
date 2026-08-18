@@ -67,6 +67,7 @@ def mock_farcaster_proof(
     fid="7654321",
     handle="credrep_user",
     cast_hash="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    server_signature="0x" + "ab" * 65,
 ):
     cast_url = f"https://farcaster.xyz/{handle}/{cast_hash[:10]}"
     vm.mock_web(
@@ -86,7 +87,7 @@ def mock_farcaster_proof(
                         {
                             "username": handle,
                             "to": int(fid),
-                            "server_signature": "0x" + "ab" * 64,
+                            "server_signature": server_signature,
                         }
                     ]
                 }
@@ -94,6 +95,37 @@ def mock_farcaster_proof(
         },
     )
     return cast_url
+
+
+def test_farcaster_fname_requires_65_byte_eip712_signature(
+    credence, direct_vm, direct_alice
+):
+    challenge = begin_binding(credence, direct_vm, direct_alice)
+    tweet_id = "2042000000000000039"
+    direct_vm.mock_web(
+        rf".*status/{tweet_id}.*",
+        {
+            "status": 200,
+            "body": x_post_html(
+                tweet_id,
+                challenge,
+                "1234567890123456789",
+                "credence_user",
+            ),
+        },
+    )
+    farcaster_url = mock_farcaster_proof(
+        direct_vm,
+        challenge,
+        server_signature="0x" + "ab" * 64,
+    )
+
+    direct_vm.sender = direct_alice
+    with direct_vm.expect_revert("farcaster_fname_signature_unreadable"):
+        credence.verify_identity_binding(
+            f"https://x.com/credence_user/status/{tweet_id}",
+            farcaster_url,
+        )
 
 
 def begin_binding(contract, vm, account):

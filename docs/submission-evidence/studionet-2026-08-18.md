@@ -15,8 +15,8 @@ window.
 | Leader-only mode | `false` |
 | Test runner | `genlayer-test 0.29.2`, `pytest 9.1.1` |
 | Python | `3.12.13` |
-| Production contract | [`0x3Aaed2C86b91013e97221dEEa4613eA211F8810f`](https://explorer-studio.genlayer.com/address/0x3Aaed2C86b91013e97221dEEa4613eA211F8810f) |
-| Production deployment | [`0x3e13174a96e25919f7bbb41d22bd9b68064e423cd5c787f2c96a7057bdfbc8c6`](https://explorer-studio.genlayer.com/tx/0x3e13174a96e25919f7bbb41d22bd9b68064e423cd5c787f2c96a7057bdfbc8c6) |
+| Production contract | [`0xEB16133048b14a38A6C870409625bbFd0dE08780`](https://explorer-studio.genlayer.com/address/0xEB16133048b14a38A6C870409625bbFd0dE08780) |
+| Production deployment | [`0xbbac18675bfc8aaeb3ed9d621297c7faa7c77a7b2ac57d7e0553dcb065a6ffb4`](https://explorer-studio.genlayer.com/tx/0xbbac18675bfc8aaeb3ed9d621297c7faa7c77a7b2ac57d7e0553dcb065a6ffb4) |
 | Fresh production state | `0 users / 0 markets / 0 predictions` |
 | Live Polymarket market ID | `2252245` |
 | Disposable integration contract | `0x620b91820637d0f60BECF01F9537f7B740498c54` |
@@ -39,6 +39,8 @@ window.
 - Scheduling a code hash succeeded, and its public execution time was exactly
   seven days after scheduling.
 - Governance reported the 30-day stale-market timeout.
+- Direct regression coverage verifies Farcaster's 65-byte EIP-712 fname server
+  signature shape before identity activation.
 
 ## Reproduction command
 
@@ -54,10 +56,10 @@ StudioNet is gasless, so this test does not require funded GEN.
 
 ```text
 contracts/credence_claims.py
-SHA256 CF35C67184C3318439F2C0BF53F8705218F456634B93B38A7DFA4A4F8C15A480
+SHA256 CF5F7EFB9538C521C931DCA676221585FAD9620714A843016823AFA749C2638B
 
 contracts/credence_claims.deploy.py
-SHA256 1D60D0D81130B2DD848D0DCD6C577A589596DF1016A5FC26FC3AAAA0A82411CC
+SHA256 8059193CE1193D23CE2AC184079F7D4C992432413A55C5464FB947ACB41F7B16
 
 tests/integration/test_credence_forecasts.py
 SHA256 3763D4B2147CF7F4CA0B093E7D3CA21DCC0DAD72024624A274714402E5AC003F

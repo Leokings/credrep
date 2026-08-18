@@ -34,6 +34,7 @@ FARCASTER_SITE_ROOT = "https://farcaster.xyz/"
 FARCASTER_FNAME_API_ROOT = "https://fnames.farcaster.xyz/transfers?name="
 MAX_FARCASTER_CAST_BYTES = 300_000
 MAX_FARCASTER_FNAME_BYTES = 100_000
+FARCASTER_EIP712_SIGNATURE_HEX_LENGTH = 132
 
 CHALLENGE_PURPOSE_BIND = "BIND"
 CHALLENGE_PURPOSE_REVERIFY = "REVERIFY"
@@ -353,7 +354,10 @@ def _validate_farcaster_fname(payload: Any, handle: str, fid: str) -> None:
     if _normalize_farcaster_fid(transfer.get("to", "")) != fid:
         _external("farcaster_fname_fid_mismatch")
     server_signature = str(transfer.get("server_signature", "")).strip().lower()
-    if len(server_signature) != 130 or not server_signature.startswith("0x"):
+    if (
+        len(server_signature) != FARCASTER_EIP712_SIGNATURE_HEX_LENGTH
+        or not server_signature.startswith("0x")
+    ):
         _external("farcaster_fname_signature_unreadable")
     for character in server_signature[2:]:
         if not (
