@@ -7,18 +7,23 @@ money, shares, liquidity, or odds. Every position belongs to one wallet and
 risks only that wallet's REP.
 
 The website fetches active Yes/No questions from Polymarket's Gamma API and
-caches them in Neon Postgres for discovery. The cache is not authoritative. On the first
-position, GenLayer validators independently fetch the market by ID and freeze
-its question, rules, slug, and deadline onchain. Validators fetch it again for
-resolution. The feed refreshes while the site is open, and expired feed entries
-are removed from the discovery cache.
+caches them in Neon Postgres for discovery. The cache is not authoritative. On
+the first position, GenLayer validators independently fetch the market by ID
+and freeze its question, rules, slug, deadline, and Polygon condition ID
+onchain. At resolution, Gamma's final result must match the payout vector in
+Polymarket's Polygon Conditional Tokens contract. Validators read that state
+through two independent Polygon RPC providers and reject settlement unless
+both providers, Gamma, and GenLayer consensus agree. The feed refreshes while
+the site is open, and expired entries are removed from the discovery cache.
 
 ## Identity
 
-One stable X account ID binds to one wallet. A fresh public challenge post is
-required every 30 days, with a 7-day grace period. A stale identity keeps its
-history but cannot predict or collect recovery until the same X account is
-reverified.
+One stable X account ID and one stable Farcaster FID bind to one wallet. The
+user posts the same contract-generated challenge on both networks. Validators
+verify the exact X post, the Farcaster cast's stable FID and exact content, and
+the Farcaster username-to-FID record. Fresh posts are required every 30 days,
+with a 7-day grace period. A stale identity keeps its history but cannot predict
+or collect recovery until the same two accounts are reverified.
 
 ## REP settlement
 
@@ -57,11 +62,11 @@ correct prediction can take REP above 100.
 
 ## Ownership
 
-GenLayer owns X binding, market verification, REP accounting, positions,
-resolution, calibration scoring, and recovery. Neon Postgres owns only the
-external feed cache, public chain read model, short-lived index challenges, and
-rate-limit counters. The browser wallet signs every action that changes a
-user's state.
+GenLayer owns dual-source identity binding, market verification, REP
+accounting, positions, resolution, calibration scoring, and recovery. Neon
+Postgres owns only the external feed cache, public chain read model, short-lived
+index challenges, and rate-limit counters. The browser wallet signs every
+action that changes a user's state.
 
 The public read model no longer trusts hosting-provider identity headers. A
 registered wallet signs a five-minute, origin-bound authorization challenge.
@@ -70,9 +75,11 @@ same-site session scoped to `/api/index` for seven days. The message explicitly
 cannot authorize a transaction or spend REP. Index and challenge endpoints are
 rate-limited separately by wallet and keyed network hash.
 
-The current Bradbury contract registers the dedicated CREDREP deployer as its
-upgrade authority. Future code upgrades must preserve the declared storage
-layout, and the deployed code and transaction remain publicly inspectable.
+The Bradbury contract registers the dedicated CREDREP deployer as its upgrade
+authority. The authority can schedule a code hash, but execution is blocked for
+seven days. The pending hash and execution time are public, and the authority
+can cancel during the delay. Future code upgrades must preserve the append-only
+storage layout, and the deployed code and transactions remain inspectable.
 
 ## Transaction lifecycle
 

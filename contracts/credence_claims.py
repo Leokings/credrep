@@ -30,6 +30,10 @@ X_VERIFICATION_GRACE_SECONDS = 7 * 24 * 60 * 60
 X_REVERIFICATION_WINDOW_SECONDS = 7 * 24 * 60 * 60
 MAX_X_PROOF_BYTES = 300_000
 MAX_X_TARGET_SECTION_BYTES = 50_000
+FARCASTER_SITE_ROOT = "https://farcaster.xyz/"
+FARCASTER_FNAME_API_ROOT = "https://fnames.farcaster.xyz/transfers?name="
+MAX_FARCASTER_CAST_BYTES = 300_000
+MAX_FARCASTER_FNAME_BYTES = 100_000
 
 CHALLENGE_PURPOSE_BIND = "BIND"
 CHALLENGE_PURPOSE_REVERIFY = "REVERIFY"
@@ -48,11 +52,17 @@ MARKET_VOID_TIMEOUT_SECONDS = 30 * 24 * 60 * 60
 
 POLYMARKET_API_ROOT = "https://gamma-api.polymarket.com/markets/"
 POLYMARKET_SITE_ROOT = "https://polymarket.com/event/"
+POLYMARKET_CTF_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
+POLYGON_RPC_PRIMARY = "https://polygon.drpc.org"
+POLYGON_RPC_SECONDARY = "https://polygon.publicnode.com"
+PAYOUT_DENOMINATOR_SELECTOR = "dd34de67"
+PAYOUT_NUMERATOR_SELECTOR = "0504c814"
 MAX_MARKET_BODY_BYTES = 200_000
 MAX_MARKET_QUESTION_LENGTH = 500
 MAX_MARKET_DESCRIPTION_LENGTH = 2_000
 MIN_CONFIDENCE_BPS = 5_000
 MAX_CONFIDENCE_BPS = 9_500
+UPGRADE_DELAY_SECONDS = 7 * 24 * 60 * 60
 
 
 def _expected(message: str) -> NoReturn:
@@ -222,10 +232,171 @@ def _parse_x_identity_result(raw: str) -> dict[str, str]:
     }
 
 
+def _normalize_farcaster_handle(raw: str) -> str:
+    handle = raw.strip().lstrip("@").lower()
+    if len(handle) < 1 or len(handle) > 32:
+        _expected("invalid_farcaster_handle")
+    for character in handle:
+        if not (
+            character.isascii()
+            and (character.isalnum() or character in "-_.")
+        ):
+            _expected("invalid_farcaster_handle")
+    if handle[0] in "-_." or handle[-1] in "-_.":
+        _expected("invalid_farcaster_handle")
+    return handle
+
+
+def _normalize_farcaster_fid(raw: Any) -> str:
+    value = str(raw).strip()
+    if len(value) < 1 or len(value) > 20 or not value.isdigit():
+        _transient("farcaster_fid_unreadable")
+    if int(value) < 1:
+        _transient("farcaster_fid_unreadable")
+    return value
+
+
+def _normalize_farcaster_hash(raw: Any, minimum_hex_length: int) -> str:
+    value = str(raw).strip().lower()
+    if (
+        not value.startswith("0x")
+        or len(value) < minimum_hex_length + 2
+        or len(value) > 42
+    ):
+        _expected("invalid_farcaster_cast_hash")
+    for character in value[2:]:
+        if not (
+            character.isascii()
+            and (character.isdigit() or character in "abcdef")
+        ):
+            _expected("invalid_farcaster_cast_hash")
+    return value
+
+
+def _normalize_farcaster_cast_url(raw: str) -> tuple[str, str, str]:
+    value = raw.strip()
+    if len(value) < 30 or len(value) > 300 or not value.startswith("https://"):
+        _expected("invalid_farcaster_cast_url")
+    value = value.split("#", 1)[0].split("?", 1)[0]
+    path = value[8:].strip("/")
+    parts = path.split("/")
+    if len(parts) != 3 or parts[0].lower() != "farcaster.xyz":
+        _expected("invalid_farcaster_cast_url")
+    handle = _normalize_farcaster_handle(parts[1])
+    hash_prefix = _normalize_farcaster_hash(parts[2], 8)
+    return f"{FARCASTER_SITE_ROOT}{handle}/{hash_prefix}", handle, hash_prefix
+
+
+def _extract_farcaster_identity(
+    html: str, expected_handle: str, hash_prefix: str, challenge: str
+) -> str:
+    marker = 'id="__NEXT_DATA__"'
+    marker_start = html.find(marker)
+    if marker_start < 0:
+        _transient("farcaster_cast_data_unreadable")
+    json_start = html.find(">", marker_start)
+    json_end = html.find("</script>", json_start + 1)
+    if json_start < 0 or json_end < 0:
+        _transient("farcaster_cast_data_unreadable")
+    try:
+        payload = json.loads(html[json_start + 1 : json_end])
+        cast_data = payload["props"]["pageProps"]["cast"]
+    except (ValueError, TypeError, KeyError):
+        _transient("farcaster_cast_data_unreadable")
+    if not isinstance(cast_data, dict):
+        _transient("farcaster_cast_data_unreadable")
+    cast_value = cast(dict[str, Any], cast_data)
+    cast_hash = _normalize_farcaster_hash(cast_value.get("hash", ""), 40)
+    if len(cast_hash) != 42 or not cast_hash.startswith(hash_prefix):
+        _expected("farcaster_cast_hash_mismatch")
+    if str(cast_value.get("text", "")).strip() != challenge:
+        _expected("farcaster_challenge_missing")
+
+    author = cast_value.get("author")
+    if not isinstance(author, dict):
+        _transient("farcaster_author_unreadable")
+    author_data = cast(dict[str, Any], author)
+    handle = _normalize_farcaster_handle(
+        str(author_data.get("username", ""))
+    )
+    if handle != expected_handle:
+        _expected("farcaster_cast_author_mismatch")
+    fid = _normalize_farcaster_fid(author_data.get("fid", ""))
+    return _canonical_json(
+        {
+            "cast_hash": cast_hash,
+            "fid": fid,
+            "handle": handle,
+            "valid": True,
+        }
+    )
+
+
+def _validate_farcaster_fname(payload: Any, handle: str, fid: str) -> None:
+    if not isinstance(payload, dict):
+        _external("invalid_farcaster_fname_response")
+    transfers = cast(dict[str, Any], payload).get("transfers")
+    if not isinstance(transfers, list):
+        _external("invalid_farcaster_fname_response")
+    if not transfers:
+        # ENS names are resolved by Farcaster through a separate onchain path.
+        # The signed cast remains sufficient for those names.
+        if handle.endswith(".eth"):
+            return
+        _transient("farcaster_fname_unreadable")
+    latest = cast(list[Any], transfers)[-1]
+    if not isinstance(latest, dict):
+        _external("invalid_farcaster_fname_response")
+    transfer = cast(dict[str, Any], latest)
+    if _normalize_farcaster_handle(str(transfer.get("username", ""))) != handle:
+        _external("farcaster_fname_mismatch")
+    if _normalize_farcaster_fid(transfer.get("to", "")) != fid:
+        _external("farcaster_fname_fid_mismatch")
+    server_signature = str(transfer.get("server_signature", "")).strip().lower()
+    if len(server_signature) != 130 or not server_signature.startswith("0x"):
+        _external("farcaster_fname_signature_unreadable")
+    for character in server_signature[2:]:
+        if not (
+            character.isascii()
+            and (character.isdigit() or character in "abcdef")
+        ):
+            _external("farcaster_fname_signature_unreadable")
+
+
+def _parse_farcaster_identity_result(raw: str) -> dict[str, str]:
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, TypeError):
+        _transient("farcaster_consensus_result_unreadable")
+    if not isinstance(parsed, dict) or parsed.get("valid") is not True:
+        _transient("farcaster_consensus_result_unreadable")
+    handle = _normalize_farcaster_handle(str(parsed.get("handle", "")))
+    fid = _normalize_farcaster_fid(parsed.get("fid", ""))
+    cast_hash = _normalize_farcaster_hash(parsed.get("cast_hash", ""), 40)
+    if len(cast_hash) != 42:
+        _transient("farcaster_cast_hash_unreadable")
+    return {"cast_hash": cast_hash, "fid": fid, "handle": handle}
+
+
 def _market_id(raw: Any) -> str:
     value = str(raw).strip()
     if len(value) < 1 or len(value) > 32 or not value.isdigit():
         _expected("invalid_market_id")
+    return value
+
+
+def _condition_id(raw: Any) -> str:
+    value = str(raw).strip().lower()
+    if len(value) != 66 or not value.startswith("0x"):
+        _external("invalid_polymarket_condition_id")
+    for character in value[2:]:
+        if not (
+            character.isascii()
+            and (character.isdigit() or character in "abcdef")
+        ):
+            _external("invalid_polymarket_condition_id")
+    if value[2:] == "0" * 64:
+        _external("invalid_polymarket_condition_id")
     return value
 
 
@@ -318,8 +489,10 @@ def _canonical_active_market(payload: Any, expected_id: str, now: int) -> str:
         1,
         MAX_MARKET_DESCRIPTION_LENGTH,
     )
+    condition_id = _condition_id(market.get("conditionId", ""))
     return _canonical_json(
         {
+            "condition_id": condition_id,
             "description": description,
             "end_time": end_time,
             "id": returned_id,
@@ -356,6 +529,7 @@ def _canonical_market_resolution(payload: Any, expected_id: str) -> str:
         _expected("market_is_not_binary_yes_no")
     if market.get("closed") is not True:
         _transient("polymarket_market_not_resolved")
+    condition_id = _condition_id(market.get("conditionId", ""))
 
     prices = [
         _normalized_price(value)
@@ -371,7 +545,86 @@ def _canonical_market_resolution(payload: Any, expected_id: str) -> str:
         outcome = OUTCOME_VOID
     else:
         _transient("polymarket_outcome_not_final")
-    return _canonical_json({"id": expected_id, "outcome": outcome})
+    return _canonical_json(
+        {
+            "condition_id": condition_id,
+            "id": expected_id,
+            "outcome": outcome,
+        }
+    )
+
+
+def _rpc_uint_result(payload: Any, request_id: int) -> int:
+    if not isinstance(payload, list):
+        _external("invalid_polygon_rpc_response")
+    matching: dict[str, Any] | None = None
+    for value in cast(list[Any], payload):
+        if not isinstance(value, dict):
+            _external("invalid_polygon_rpc_response")
+        item = cast(dict[str, Any], value)
+        try:
+            item_id = int(item.get("id", -1))
+        except (ValueError, TypeError, OverflowError):
+            _external("invalid_polygon_rpc_response")
+        if item_id == request_id:
+            matching = item
+    if matching is None or matching.get("error") is not None:
+        _transient("polygon_rpc_call_failed")
+    raw_result = matching.get("result")
+    if not isinstance(raw_result, str) or not raw_result.startswith("0x"):
+        _external("invalid_polygon_rpc_result")
+    hexadecimal = raw_result[2:]
+    if len(hexadecimal) < 1 or len(hexadecimal) > 64:
+        _external("invalid_polygon_rpc_result")
+    for character in hexadecimal.lower():
+        if not (
+            character.isascii()
+            and (character.isdigit() or character in "abcdef")
+        ):
+            _external("invalid_polygon_rpc_result")
+    return int(hexadecimal, 16)
+
+
+def _canonical_ctf_resolution(payload: Any, condition_id: str) -> str:
+    denominator = _rpc_uint_result(payload, 1)
+    yes_numerator = _rpc_uint_result(payload, 2)
+    no_numerator = _rpc_uint_result(payload, 3)
+    if denominator == 0:
+        _transient("ctf_condition_not_resolved")
+    if yes_numerator + no_numerator != denominator:
+        _transient("ctf_payout_vector_invalid")
+    if yes_numerator == denominator and no_numerator == 0:
+        outcome = PREDICTION_YES
+    elif yes_numerator == 0 and no_numerator == denominator:
+        outcome = PREDICTION_NO
+    elif yes_numerator == no_numerator and yes_numerator > 0:
+        outcome = OUTCOME_VOID
+    else:
+        _transient("ctf_payout_vector_unsupported")
+    return _canonical_json(
+        {
+            "condition_id": condition_id,
+            "denominator": denominator,
+            "no_numerator": no_numerator,
+            "outcome": outcome,
+            "yes_numerator": yes_numerator,
+        }
+    )
+
+
+def _normalize_upgrade_hash(raw: str) -> str:
+    value = raw.strip().lower()
+    if value.startswith("0x"):
+        value = value[2:]
+    if len(value) != 64:
+        _expected("invalid_upgrade_code_hash")
+    for character in value:
+        if not (
+            character.isascii()
+            and (character.isdigit() or character in "abcdef")
+        ):
+            _expected("invalid_upgrade_code_hash")
+    return value
 
 
 class CredrepForecasts(gl.Contract):
@@ -434,6 +687,14 @@ class CredrepForecasts(gl.Contract):
     position_settled_at: TreeMap[str, str]
     user_position_ids: TreeMap[str, str]
     upgrade_authority: Address
+    wallet_farcaster_fids: TreeMap[Address, str]
+    farcaster_fid_wallet_addresses: TreeMap[str, str]
+    farcaster_handles: TreeMap[Address, str]
+    farcaster_proof_urls: TreeMap[Address, str]
+    market_condition_ids: TreeMap[str, str]
+    pending_upgrade_code_hash: str
+    pending_upgrade_scheduled_at: u256
+    pending_upgrade_execute_after: u256
 
     def __init__(self, starting_reputation: u256, max_stake_bps: u256):
         initial = int(starting_reputation)
@@ -464,6 +725,9 @@ class CredrepForecasts(gl.Contract):
             if challenge and now <= expires_at:
                 return IDENTITY_PENDING
             return IDENTITY_UNBOUND
+
+        if not self.wallet_farcaster_fids.get(account, ""):
+            return IDENTITY_STALE
 
         verified_until = int(
             self.identity_verified_until.get(account, u256(0))
@@ -538,6 +802,97 @@ class CredrepForecasts(gl.Contract):
             _transient("x_post_id_mismatch")
         return parsed
 
+    def _run_farcaster_cast_consensus(
+        self, proof_url: str, challenge: str
+    ) -> dict[str, str]:
+        normalized_url, expected_handle, hash_prefix = (
+            _normalize_farcaster_cast_url(proof_url)
+        )
+        fname_url = f"{FARCASTER_FNAME_API_ROOT}{expected_handle}"
+
+        def leader_fn() -> str:
+            try:
+                response = gl.nondet.web.get(
+                    normalized_url,
+                    headers={
+                        "Accept": "text/html",
+                        "Accept-Language": "en-US,en;q=0.9",
+                        "User-Agent": "Twitterbot/1.0",
+                    },
+                )
+            except Exception:
+                _transient("farcaster_cast_fetch_failed")
+            if response.status == 429 or response.status >= 500:
+                _transient(f"farcaster_cast_http_{response.status}")
+            if response.status != 200 or response.body is None:
+                _external(f"farcaster_cast_http_{response.status}")
+            html = response.body[:MAX_FARCASTER_CAST_BYTES].decode(
+                "utf-8", errors="replace"
+            )
+            result = _extract_farcaster_identity(
+                html, expected_handle, hash_prefix, challenge
+            )
+            identity = _parse_farcaster_identity_result(result)
+
+            try:
+                fname_response = gl.nondet.web.get(
+                    fname_url,
+                    headers={
+                        "Accept": "application/json",
+                        "User-Agent": "CREDREP-Identity-Verifier/4.0",
+                    },
+                )
+            except Exception:
+                _transient("farcaster_fname_fetch_failed")
+            if fname_response.status == 429 or fname_response.status >= 500:
+                _transient(f"farcaster_fname_http_{fname_response.status}")
+            if fname_response.status != 200 or fname_response.body is None:
+                _external(f"farcaster_fname_http_{fname_response.status}")
+            try:
+                payload = json.loads(
+                    fname_response.body[:MAX_FARCASTER_FNAME_BYTES].decode(
+                        "utf-8", errors="strict"
+                    )
+                )
+            except (ValueError, UnicodeDecodeError, TypeError):
+                _external("invalid_farcaster_fname_response")
+            _validate_farcaster_fname(
+                payload, identity["handle"], identity["fid"]
+            )
+            return result
+
+        def validator_fn(leaders_res: gl.vm.Result[str]) -> bool:
+            if not isinstance(leaders_res, gl.vm.Return):
+                if not isinstance(leaders_res, gl.vm.UserError):
+                    return False
+                try:
+                    leader_fn()
+                    return False
+                except gl.vm.UserError as validator_error:
+                    leader_message = leaders_res.message
+                    validator_message = validator_error.message
+                    if leader_message.startswith(ERROR_TRANSIENT):
+                        return validator_message.startswith(ERROR_TRANSIENT)
+                    if leader_message.startswith(ERROR_EXTERNAL):
+                        return validator_message == leader_message
+                    if leader_message.startswith(ERROR_EXPECTED):
+                        return validator_message == leader_message
+                    return False
+                except Exception:
+                    return False
+            try:
+                return str(leaders_res.calldata) == leader_fn()
+            except Exception:
+                return False
+
+        result = str(gl.vm.run_nondet_unsafe(leader_fn, validator_fn))
+        parsed = _parse_farcaster_identity_result(result)
+        if not parsed["cast_hash"].startswith(hash_prefix):
+            _transient("farcaster_cast_hash_mismatch")
+        if parsed["handle"] != expected_handle:
+            _transient("farcaster_cast_author_mismatch")
+        return parsed
+
     def _issue_x_challenge(self, account: Address, purpose: str) -> None:
         now = _now_unix()
         current_challenge = self.pending_binding_challenges.get(account, "")
@@ -578,7 +933,7 @@ class CredrepForecasts(gl.Contract):
         self._issue_x_challenge(account, CHALLENGE_PURPOSE_BIND)
 
     @gl.public.write
-    def verify_x_binding(self, proof_url: str) -> None:
+    def verify_x_binding(self, proof_url: str, farcaster_proof_url: str) -> None:
         account = gl.message.sender_address
         if self.wallet_identity_ids.get(account, "") or self.registered.get(
             account, False
@@ -594,10 +949,19 @@ class CredrepForecasts(gl.Contract):
             _expected("x_binding_challenge_expired")
 
         verified = self._run_x_proof_consensus(proof_url, challenge)
+        farcaster_verified = self._run_farcaster_cast_consensus(
+            farcaster_proof_url, challenge
+        )
         identity_id = verified["identity_id"]
         existing_wallet = self.identity_wallet_addresses.get(identity_id, "")
         if existing_wallet:
             _expected("x_identity_already_bound")
+        farcaster_fid = farcaster_verified["fid"]
+        farcaster_existing_wallet = self.farcaster_fid_wallet_addresses.get(
+            farcaster_fid, ""
+        )
+        if farcaster_existing_wallet:
+            _expected("farcaster_identity_already_bound")
 
         handle = verified["handle"]
         canonical_proof = (
@@ -607,6 +971,16 @@ class CredrepForecasts(gl.Contract):
         self.identity_wallet_addresses[identity_id] = _address_key(account)
         self.identity_handles[account] = handle
         self.identity_proof_urls[account] = canonical_proof
+        farcaster_handle = farcaster_verified["handle"]
+        self.wallet_farcaster_fids[account] = farcaster_fid
+        self.farcaster_fid_wallet_addresses[farcaster_fid] = (
+            _address_key(account)
+        )
+        self.farcaster_handles[account] = farcaster_handle
+        self.farcaster_proof_urls[account] = (
+            f"{FARCASTER_SITE_ROOT}{farcaster_handle}/"
+            f"{farcaster_verified['cast_hash']}"
+        )
         self.identity_challenges[account] = challenge
         self.identity_verified_at[account] = u256(now)
         self.identity_verified_until[account] = u256(
@@ -626,12 +1000,18 @@ class CredrepForecasts(gl.Contract):
         verified_until = int(
             self.identity_verified_until.get(account, u256(0))
         )
-        if now + X_REVERIFICATION_WINDOW_SECONDS < verified_until:
+        farcaster_fid = self.wallet_farcaster_fids.get(account, "")
+        if (
+            farcaster_fid
+            and now + X_REVERIFICATION_WINDOW_SECONDS < verified_until
+        ):
             _expected("x_reverification_not_due")
         self._issue_x_challenge(account, CHALLENGE_PURPOSE_REVERIFY)
 
     @gl.public.write
-    def verify_x_reverification(self, proof_url: str) -> None:
+    def verify_x_reverification(
+        self, proof_url: str, farcaster_proof_url: str
+    ) -> None:
         account = gl.message.sender_address
         identity_id = self.wallet_identity_ids.get(account, "")
         if not identity_id:
@@ -646,13 +1026,44 @@ class CredrepForecasts(gl.Contract):
             _expected("x_reverification_challenge_expired")
 
         verified = self._run_x_proof_consensus(proof_url, challenge)
+        farcaster_verified = self._run_farcaster_cast_consensus(
+            farcaster_proof_url, challenge
+        )
         if verified["identity_id"] != identity_id:
             _expected("x_identity_changed")
+
+        farcaster_fid = farcaster_verified["fid"]
+        previous_farcaster_fid = self.wallet_farcaster_fids.get(
+            account, ""
+        )
+        if (
+            previous_farcaster_fid
+            and farcaster_fid != previous_farcaster_fid
+        ):
+            _expected("farcaster_identity_changed")
+        farcaster_existing_wallet = self.farcaster_fid_wallet_addresses.get(
+            farcaster_fid, ""
+        )
+        if (
+            farcaster_existing_wallet
+            and farcaster_existing_wallet != _address_key(account)
+        ):
+            _expected("farcaster_identity_already_bound")
 
         handle = verified["handle"]
         self.identity_handles[account] = handle
         self.identity_proof_urls[account] = (
             f"https://x.com/{handle}/status/{verified['tweet_id']}"
+        )
+        farcaster_handle = farcaster_verified["handle"]
+        self.wallet_farcaster_fids[account] = farcaster_fid
+        self.farcaster_fid_wallet_addresses[farcaster_fid] = (
+            _address_key(account)
+        )
+        self.farcaster_handles[account] = farcaster_handle
+        self.farcaster_proof_urls[account] = (
+            f"{FARCASTER_SITE_ROOT}{farcaster_handle}/"
+            f"{farcaster_verified['cast_hash']}"
         )
         self.identity_challenges[account] = challenge
         self.identity_verified_at[account] = u256(now)
@@ -819,6 +1230,130 @@ class CredrepForecasts(gl.Contract):
             _transient("polymarket_consensus_result_unreadable")
         return cast(dict[str, Any], parsed)
 
+    def _run_ctf_consensus(self, condition_id: str) -> dict[str, Any]:
+        normalized_condition_id = _condition_id(condition_id)
+        condition_hex = normalized_condition_id[2:]
+        zero_index = "0" * 64
+        one_index = "0" * 63 + "1"
+        calls = [
+            {
+                "id": 1,
+                "jsonrpc": "2.0",
+                "method": "eth_call",
+                "params": [
+                    {
+                        "data": "0x"
+                        + PAYOUT_DENOMINATOR_SELECTOR
+                        + condition_hex,
+                        "to": POLYMARKET_CTF_ADDRESS,
+                    },
+                    "latest",
+                ],
+            },
+            {
+                "id": 2,
+                "jsonrpc": "2.0",
+                "method": "eth_call",
+                "params": [
+                    {
+                        "data": "0x"
+                        + PAYOUT_NUMERATOR_SELECTOR
+                        + condition_hex
+                        + zero_index,
+                        "to": POLYMARKET_CTF_ADDRESS,
+                    },
+                    "latest",
+                ],
+            },
+            {
+                "id": 3,
+                "jsonrpc": "2.0",
+                "method": "eth_call",
+                "params": [
+                    {
+                        "data": "0x"
+                        + PAYOUT_NUMERATOR_SELECTOR
+                        + condition_hex
+                        + one_index,
+                        "to": POLYMARKET_CTF_ADDRESS,
+                    },
+                    "latest",
+                ],
+            },
+        ]
+        body = _canonical_json(calls).encode("utf-8")
+
+        def leader_fn() -> str:
+            results: list[str] = []
+            for url in (POLYGON_RPC_PRIMARY, POLYGON_RPC_SECONDARY):
+                try:
+                    response = gl.nondet.web.post(
+                        url,
+                        body=body,
+                        headers={
+                            "Accept": "application/json",
+                            "Content-Type": "application/json",
+                            "User-Agent": "CREDREP-Settlement-Verifier/1.0",
+                        },
+                    )
+                except Exception:
+                    _transient("polygon_rpc_fetch_failed")
+                if response.status == 429 or response.status >= 500:
+                    _transient(f"polygon_rpc_http_{response.status}")
+                if response.status != 200 or response.body is None:
+                    _external(f"polygon_rpc_http_{response.status}")
+                try:
+                    payload = json.loads(
+                        response.body[:MAX_MARKET_BODY_BYTES].decode(
+                            "utf-8", errors="strict"
+                        )
+                    )
+                except (ValueError, UnicodeDecodeError, TypeError):
+                    _external("invalid_polygon_rpc_response")
+                results.append(
+                    _canonical_ctf_resolution(
+                        payload, normalized_condition_id
+                    )
+                )
+            if results[0] != results[1]:
+                _transient("polygon_rpc_provider_disagreement")
+            return results[0]
+
+        def validator_fn(leaders_res: gl.vm.Result[str]) -> bool:
+            if not isinstance(leaders_res, gl.vm.Return):
+                if not isinstance(leaders_res, gl.vm.UserError):
+                    return False
+                try:
+                    leader_fn()
+                    return False
+                except gl.vm.UserError as validator_error:
+                    leader_message = leaders_res.message
+                    validator_message = validator_error.message
+                    if leader_message.startswith(ERROR_TRANSIENT):
+                        return validator_message.startswith(ERROR_TRANSIENT)
+                    if leader_message.startswith(ERROR_EXTERNAL):
+                        return validator_message == leader_message
+                    if leader_message.startswith(ERROR_EXPECTED):
+                        return validator_message == leader_message
+                    return False
+                except Exception:
+                    return False
+            try:
+                return str(leaders_res.calldata) == leader_fn()
+            except Exception:
+                return False
+
+        result = str(gl.vm.run_nondet_unsafe(leader_fn, validator_fn))
+        try:
+            parsed = json.loads(result)
+        except (ValueError, TypeError):
+            _transient("ctf_consensus_result_unreadable")
+        if not isinstance(parsed, dict):
+            _transient("ctf_consensus_result_unreadable")
+        if str(parsed.get("condition_id", "")) != normalized_condition_id:
+            _transient("ctf_condition_id_mismatch")
+        return cast(dict[str, Any], parsed)
+
     def _store_or_verify_market(
         self, market_id: str, market: dict[str, Any]
     ) -> None:
@@ -827,6 +1362,7 @@ class CredrepForecasts(gl.Contract):
         slug = str(market["slug"])
         source_url = str(market["source_url"])
         end_time = int(market["end_time"])
+        condition_id = _condition_id(market["condition_id"])
         if self.market_exists.get(market_id, False):
             if (
                 self.market_questions[market_id] != question
@@ -836,6 +1372,13 @@ class CredrepForecasts(gl.Contract):
                 or int(self.market_end_times[market_id]) != end_time
             ):
                 _external("polymarket_market_metadata_changed")
+            existing_condition_id = self.market_condition_ids.get(
+                market_id, ""
+            )
+            if existing_condition_id and existing_condition_id != condition_id:
+                _external("polymarket_condition_id_changed")
+            if not existing_condition_id:
+                self.market_condition_ids[market_id] = condition_id
             return
 
         self.market_exists[market_id] = True
@@ -844,6 +1387,7 @@ class CredrepForecasts(gl.Contract):
         self.market_slugs[market_id] = slug
         self.market_source_urls[market_id] = source_url
         self.market_end_times[market_id] = u256(end_time)
+        self.market_condition_ids[market_id] = condition_id
         self.market_statuses[market_id] = MARKET_OPEN
         self.market_synced_at[market_id] = str(gl.message_raw["datetime"])
         self.market_ids.append(market_id)
@@ -936,9 +1480,19 @@ class CredrepForecasts(gl.Contract):
         resolution = self._run_polymarket_consensus(
             normalized_id, "RESOLVE", now
         )
+        gamma_condition_id = _condition_id(resolution.get("condition_id", ""))
+        stored_condition_id = self.market_condition_ids.get(normalized_id, "")
+        if stored_condition_id and stored_condition_id != gamma_condition_id:
+            _external("polymarket_condition_id_changed")
+        if not stored_condition_id:
+            self.market_condition_ids[normalized_id] = gamma_condition_id
+        ctf_resolution = self._run_ctf_consensus(gamma_condition_id)
         outcome = str(resolution.get("outcome", "")).upper()
         if outcome not in (PREDICTION_YES, PREDICTION_NO, OUTCOME_VOID):
             _transient("polymarket_consensus_result_unreadable")
+        ctf_outcome = str(ctf_resolution.get("outcome", "")).upper()
+        if ctf_outcome != outcome:
+            _transient("polymarket_ctf_outcome_disagreement")
         self.market_outcomes[normalized_id] = outcome
         self.market_statuses[normalized_id] = (
             MARKET_VOID if outcome == OUTCOME_VOID else MARKET_RESOLVED
@@ -969,11 +1523,44 @@ class CredrepForecasts(gl.Contract):
         )
 
     @gl.public.write
-    def upgrade(self, new_code: bytes) -> None:
+    def schedule_upgrade(self, code_hash: str) -> None:
         if gl.message.sender_address != self.upgrade_authority:
             _expected("only_upgrade_authority")
+        normalized_hash = _normalize_upgrade_hash(code_hash)
+        now = _now_unix()
+        self.pending_upgrade_code_hash = normalized_hash
+        self.pending_upgrade_scheduled_at = u256(now)
+        self.pending_upgrade_execute_after = u256(
+            now + UPGRADE_DELAY_SECONDS
+        )
+
+    @gl.public.write
+    def cancel_upgrade(self) -> None:
+        if gl.message.sender_address != self.upgrade_authority:
+            _expected("only_upgrade_authority")
+        if not self.pending_upgrade_code_hash:
+            _expected("upgrade_not_scheduled")
+        self.pending_upgrade_code_hash = ""
+        self.pending_upgrade_scheduled_at = u256(0)
+        self.pending_upgrade_execute_after = u256(0)
+
+    @gl.public.write
+    def execute_upgrade(self, new_code: bytes) -> None:
+        if gl.message.sender_address != self.upgrade_authority:
+            _expected("only_upgrade_authority")
+        scheduled_hash = self.pending_upgrade_code_hash
+        if not scheduled_hash:
+            _expected("upgrade_not_scheduled")
+        if _now_unix() < int(self.pending_upgrade_execute_after):
+            _expected("upgrade_delay_active")
         if len(new_code) == 0:
             _expected("upgrade_code_required")
+        actual_hash = Keccak256(new_code).hexdigest()
+        if actual_hash != scheduled_hash:
+            _expected("upgrade_code_hash_mismatch")
+        self.pending_upgrade_code_hash = ""
+        self.pending_upgrade_scheduled_at = u256(0)
+        self.pending_upgrade_execute_after = u256(0)
         root = gl.storage.Root.get()
         code = root.code.get()
         code.truncate()
@@ -1075,6 +1662,7 @@ class CredrepForecasts(gl.Contract):
     def get_identity_status(self, account: Address) -> dict[str, Any]:
         now = _now_unix()
         identity_id = self.wallet_identity_ids.get(account, "")
+        farcaster_fid = self.wallet_farcaster_fids.get(account, "")
         verified_at = int(self.identity_verified_at.get(account, u256(0)))
         verified_until = int(
             self.identity_verified_until.get(account, u256(0))
@@ -1087,10 +1675,14 @@ class CredrepForecasts(gl.Contract):
         pending_purpose = self.pending_challenge_purposes.get(account, "")
         return {
             "bound": bool(identity_id),
+            "dual_source_bound": bool(identity_id) and bool(farcaster_fid),
             "status": status,
             "handle": self.identity_handles.get(account, ""),
             "identity_id": identity_id,
             "proof_url": self.identity_proof_urls.get(account, ""),
+            "farcaster_fid": farcaster_fid,
+            "farcaster_handle": self.farcaster_handles.get(account, ""),
+            "farcaster_proof_url": self.farcaster_proof_urls.get(account, ""),
             "challenge": self.identity_challenges.get(account, ""),
             "verified_at": verified_at,
             "verified_until": verified_until,
@@ -1100,7 +1692,10 @@ class CredrepForecasts(gl.Contract):
                 else 0
             ),
             "reverification_due": bool(identity_id)
-            and now + X_REVERIFICATION_WINDOW_SECONDS >= verified_until,
+            and (
+                not farcaster_fid
+                or now + X_REVERIFICATION_WINDOW_SECONDS >= verified_until
+            ),
             "reverification_pending": bool(pending_challenge)
             and now <= pending_expires_at
             and pending_purpose == CHALLENGE_PURPOSE_REVERIFY,
@@ -1118,6 +1713,8 @@ class CredrepForecasts(gl.Contract):
             "description": self.market_descriptions[normalized_id],
             "slug": self.market_slugs[normalized_id],
             "source_url": self.market_source_urls[normalized_id],
+            "condition_id": self.market_condition_ids.get(normalized_id, ""),
+            "settlement_source": "Polymarket Gamma + Polygon CTF",
             "end_time_unix": int(self.market_end_times[normalized_id]),
             "void_after_unix": int(self.market_end_times[normalized_id])
             + MARKET_VOID_TIMEOUT_SECONDS,
@@ -1187,6 +1784,7 @@ class CredrepForecasts(gl.Contract):
         correct = int(self.user_correct_counts.get(account, u256(0)))
         now = _now_unix()
         identity_id = self.wallet_identity_ids.get(account, "")
+        farcaster_fid = self.wallet_farcaster_fids.get(account, "")
         identity_status = self._identity_status_value(account, now)
         recovery_is_active = self.recovery_active.get(account, False)
         return {
@@ -1221,6 +1819,11 @@ class CredrepForecasts(gl.Contract):
             "x_verified_until": int(
                 self.identity_verified_until.get(account, u256(0))
             ),
+            "farcaster_identity_bound": bool(farcaster_fid),
+            "farcaster_fid": farcaster_fid,
+            "farcaster_handle": self.farcaster_handles.get(account, ""),
+            "dual_source_identity_bound": bool(identity_id)
+            and bool(farcaster_fid),
             "recovery_active": recovery_is_active,
             "recovery_next_at": int(
                 self.recovery_next_at.get(account, u256(0))
@@ -1252,12 +1855,23 @@ class CredrepForecasts(gl.Contract):
             "x_verification_grace_seconds": X_VERIFICATION_GRACE_SECONDS,
             "x_reverification_window_seconds": X_REVERIFICATION_WINDOW_SECONDS,
             "market_void_timeout_seconds": MARKET_VOID_TIMEOUT_SECONDS,
+            "upgrade_delay_seconds": UPGRADE_DELAY_SECONDS,
         }
 
     @gl.public.view
     def get_governance(self) -> dict[str, Any]:
+        pending_hash = self.pending_upgrade_code_hash
         return {
             "upgradeable": True,
             "upgrade_authority": str(self.upgrade_authority),
+            "upgrade_delay_seconds": UPGRADE_DELAY_SECONDS,
+            "upgrade_pending": bool(pending_hash),
+            "pending_upgrade_code_hash": pending_hash,
+            "pending_upgrade_scheduled_at": int(
+                self.pending_upgrade_scheduled_at
+            ),
+            "pending_upgrade_execute_after": int(
+                self.pending_upgrade_execute_after
+            ),
             "market_void_timeout_seconds": MARKET_VOID_TIMEOUT_SECONDS,
         }

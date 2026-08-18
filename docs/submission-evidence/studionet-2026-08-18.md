@@ -4,22 +4,22 @@
 
 **PASS** — the CREDREP intelligent contract deployed on GenLayer StudioNet,
 fetched a live binary Polymarket question through validator consensus, stored
-the canonical market, and returned the expected governance configuration.
+its canonical Polygon condition ID, and enforced a seven-day scheduled-upgrade
+window.
 
 | Field | Value |
 | --- | --- |
-| Run time | 2026-08-14T11:25:01-07:00 |
+| Run time | 2026-08-18T05:46:00-07:00 |
 | Network | `studionet` |
 | RPC | `https://studio.genlayer.com/api` |
 | Leader-only mode | `false` |
 | Test runner | `genlayer-test 0.29.2`, `pytest 9.1.1` |
 | Python | `3.12.13` |
-| Source baseline | `a464322126331b34dd9adea0e49f021ffabf9f47` |
-| Live Polymarket market ID | `2774056` |
-| StudioNet contract | `0xd2fEE3F35Afcf44a04323bd4D4a9DbCca7887168` |
-| StudioNet sync transaction | `0xa3693e1d41a7e67e818f88fd8fa21e3e71ed9e0dc4ed50af49c77978628e0dc3` |
+| Live Polymarket market ID | `601835` |
+| StudioNet contract | `0xDEd3428055f7bC6aa7D1cEF9f010f4D2BB610950` |
+| StudioNet sync transaction | `0x4c4a424d7e5fa6543b3357be7367891549480216b84cd3c3e199cd37b4eda495` |
 | Leader execution result | `SUCCESS` |
-| Test duration | `31.75s` |
+| Test duration | `40.32s` |
 
 ## Tested assertions
 
@@ -28,9 +28,13 @@ the canonical market, and returned the expected governance configuration.
   consensus.
 - The stored question matched the live Polymarket response.
 - The stored market was `OPEN` and had a canonical Polymarket source URL.
+- The stored Polygon condition ID matched Gamma's market record.
+- The market exposed Polygon Conditional Tokens as its settlement source.
 - The permissionless void time was exactly 30 days after the market deadline.
 - Protocol statistics reported one synchronized market.
-- Governance reported the contract as upgradeable.
+- Governance reported a seven-day upgrade delay and no pending upgrade.
+- Scheduling a code hash succeeded, and its public execution time was exactly
+  seven days after scheduling.
 - Governance reported the 30-day stale-market timeout.
 
 ## Reproduction command
@@ -47,10 +51,10 @@ StudioNet is gasless, so this test does not require funded GEN.
 
 ```text
 contracts/credence_claims.py
-SHA256 CB1EAEF88B044CA905B77D7BF415F4522F9FC77A19091CE28204BC181BE29294
+SHA256 0A029B5C7FF97DCCC43ABFC81614CB3E31F64199D651529E9EA06EEE8952D994
 
 tests/integration/test_credence_forecasts.py
-SHA256 A79511139A7EE15EDBBF77C08E745D08F856FFBBEF7DB525DBA8C99AA51E59DE
+SHA256 0EA0ACB4472540AAD28A96313185CA53DA6589C404424128D0656A8F5DCFAC6A
 
 gltest.config.yaml
 SHA256 81E188ADC1A80EB56E9327BC5C5E6D60ECC7CDE3AA5CA320B04269D449CD453A
@@ -65,13 +69,13 @@ plugins: anyio-4.14.2, genlayer-test-0.29.2
 collected 1 item
 
 tests/integration/test_credence_forecasts.py::test_live_polymarket_question_reaches_genlayer_consensus
-EVIDENCE market_id=2774056
-EVIDENCE contract_address=0xd2fEE3F35Afcf44a04323bd4D4a9DbCca7887168
-EVIDENCE sync_transaction=0xa3693e1d41a7e67e818f88fd8fa21e3e71ed9e0dc4ed50af49c77978628e0dc3
+EVIDENCE market_id=601835
+EVIDENCE contract_address=0xDEd3428055f7bC6aa7D1cEF9f010f4D2BB610950
+EVIDENCE sync_transaction=0x4c4a424d7e5fa6543b3357be7367891549480216b84cd3c3e199cd37b4eda495
 EVIDENCE sync_execution_result=SUCCESS
 PASSED
 
-============================= 1 passed in 31.75s ==============================
+============================= 1 passed in 40.32s ==============================
 INFO: File `gltest.config.yaml` found in the current directory, using it
 INFO: RPC URL: https://studio.genlayer.com/api
 INFO: Selected Network: studionet

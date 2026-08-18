@@ -70,6 +70,8 @@ def test_live_polymarket_question_reaches_genlayer_consensus():
     assert stored["question"] == " ".join(source_market["question"].split())
     assert stored["status"] == "OPEN"
     assert stored["source_url"].startswith("https://polymarket.com/event/")
+    assert stored["condition_id"] == str(source_market["conditionId"]).lower()
+    assert stored["settlement_source"] == "Polymarket Gamma + Polygon CTF"
     assert stored["void_after_unix"] == int(
         datetime.fromisoformat(
             str(source_market["endDate"]).replace("Z", "+00:00")
@@ -78,4 +80,18 @@ def test_live_polymarket_question_reaches_genlayer_consensus():
     assert contract.get_protocol_stats().call()["markets"] == 1
     governance = contract.get_governance().call()
     assert governance["upgradeable"] is True
+    assert governance["upgrade_delay_seconds"] == 7 * 24 * 60 * 60
+    assert governance["upgrade_pending"] is False
     assert governance["market_void_timeout_seconds"] == 30 * 24 * 60 * 60
+
+    schedule_receipt = contract.schedule_upgrade(args=["11" * 32]).transact(
+        wait_retries=180
+    )
+    assert tx_execution_succeeded(schedule_receipt)
+    governance = contract.get_governance().call()
+    assert governance["upgrade_pending"] is True
+    assert governance["pending_upgrade_code_hash"] == "11" * 32
+    assert (
+        governance["pending_upgrade_execute_after"]
+        - governance["pending_upgrade_scheduled_at"]
+    ) == 7 * 24 * 60 * 60

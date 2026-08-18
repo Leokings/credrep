@@ -12,6 +12,7 @@ import {
   CredenceTransactionExecutionError,
   connectCredenceWallet,
   isBradburyChainId,
+  normalizeFarcasterCastUrl,
   normalizeXProofUrl,
   readBindingChallenge,
   readChainIdentity,
@@ -294,6 +295,7 @@ export function CredrepApp() {
   const [stake, setStake] = useState(1);
   const [identityOpen, setIdentityOpen] = useState(false);
   const [proofUrl, setProofUrl] = useState("");
+  const [farcasterProofUrl, setFarcasterProofUrl] = useState("");
   const [verificationAttempt, setVerificationAttempt] =
     useState<VerificationAttempt | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
@@ -613,12 +615,13 @@ export function CredrepApp() {
       await loadWallet(connected.address, true, connected);
       rememberVerification(connected.address, null);
       setProofUrl("");
+      setFarcasterProofUrl("");
       setIdentityOpen(false);
       setNotice({
         tone: "good",
         text: attempt.purpose === "REVERIFY"
-          ? "X account reverified."
-          : "X account bound. You have 100 REP.",
+          ? "Identity reverified."
+          : "Identity verified. You have 100 REP.",
       });
     } catch (error) {
       if (error instanceof CredenceTransactionExecutionError) {
@@ -656,14 +659,15 @@ export function CredrepApp() {
       setVerificationAttempt(storedAttempt);
       setPendingAction(storedAction);
       setProofUrl("");
+      setFarcasterProofUrl("");
       if (storedAttempt) setIdentityOpen(true);
       await loadWallet(connected.address, true, connected);
       setNotice({
         tone: storedAttempt || storedAction ? "plain" : "good",
         text: storedAttempt
           ? storedAttempt.status === "PENDING"
-            ? "A submitted X verification is being checked."
-            : "Your last X verification failed. Review it before retrying."
+            ? "A submitted identity verification is being checked."
+            : "Your last identity verification failed. Review it before retrying."
           : storedAction
             ? storedAction.status === "PENDING"
               ? `A submitted ${storedAction.label.toLowerCase()} is being checked.`
@@ -777,7 +781,7 @@ export function CredrepApp() {
     await runTrackedAction({
       busyKey: "identity",
       kind: "X_CHALLENGE",
-      label: identity?.bound ? "Create X recheck" : "Create X verification",
+      label: identity?.bound ? "Create identity recheck" : "Create identity verification",
       pendingText: "Creating challenge…",
       successText: "Challenge ready. Post it exactly as shown.",
       execute: (onSubmitted) =>
@@ -805,9 +809,12 @@ export function CredrepApp() {
     }
 
     let canonicalProofUrl: string;
+    let canonicalFarcasterProofUrl: string;
     try {
       canonicalProofUrl = normalizeXProofUrl(proofUrl);
+      canonicalFarcasterProofUrl = normalizeFarcasterCastUrl(farcasterProofUrl);
       setProofUrl(canonicalProofUrl);
+      setFarcasterProofUrl(canonicalFarcasterProofUrl);
     } catch (error) {
       setNotice({
         tone: "bad",
@@ -835,15 +842,24 @@ export function CredrepApp() {
         });
       };
       if (purpose === "REVERIFY") {
-        await wallet.verifyXReverification(canonicalProofUrl, onSubmitted);
+        await wallet.verifyXReverification(
+          canonicalProofUrl,
+          canonicalFarcasterProofUrl,
+          onSubmitted,
+        );
       } else {
-        await wallet.verifyXBinding(canonicalProofUrl, onSubmitted);
+        await wallet.verifyXBinding(
+          canonicalProofUrl,
+          canonicalFarcasterProofUrl,
+          onSubmitted,
+        );
       }
       await loadWallet(wallet.address, true, wallet);
       rememberVerification(wallet.address, null);
       setProofUrl("");
+      setFarcasterProofUrl("");
       setIdentityOpen(false);
-      setNotice({ tone: "good", text: purpose === "REVERIFY" ? "X account reverified." : "X account bound. You have 100 REP." });
+      setNotice({ tone: "good", text: purpose === "REVERIFY" ? "Identity reverified." : "Identity verified. You have 100 REP." });
     } catch (error) {
       const submitted = submittedAttempt as VerificationAttempt | null;
       if (submitted && error instanceof CredenceTransactionExecutionError) {
@@ -1057,12 +1073,13 @@ export function CredrepApp() {
           setVerificationAttempt(null);
           writeVerificationAttempt(wallet.address, null);
           setProofUrl("");
+          setFarcasterProofUrl("");
           setIdentityOpen(false);
           setNotice({
             tone: "good",
             text: attempt.purpose === "REVERIFY"
-              ? "X account reverified."
-              : "X account bound. You have 100 REP.",
+              ? "Identity reverified."
+              : "Identity verified. You have 100 REP.",
           });
         } else if (action) {
           setPendingAction(null);
@@ -1115,7 +1132,7 @@ export function CredrepApp() {
         <div className="header-actions">
           {wallet && (
             <button className="quiet-button" onClick={() => setIdentityOpen(true)}>
-              <ShieldIcon /> {identity?.bound ? `@${identity.handle}` : "Verify X"}
+              <ShieldIcon /> {identity?.bound ? `@${identity.handle}` : "Verify identity"}
             </button>
           )}
           <button
@@ -1223,7 +1240,7 @@ export function CredrepApp() {
         ) : view === "record" ? (
           <section className="record-section">
             {!wallet && <div className="empty-state"><h2>Connect your wallet</h2><p>Your onchain prediction record will appear here.</p><button onClick={connectWallet}>Connect wallet</button></div>}
-            {wallet && !profile?.registered && <div className="empty-state"><h2>Verify one X account</h2><p>This creates your non-transferable 100 REP identity.</p><button onClick={() => setIdentityOpen(true)}>Verify X</button></div>}
+            {wallet && !profile?.registered && <div className="empty-state"><h2>Verify X and Farcaster</h2><p>This creates your non-transferable 100 REP identity.</p><button onClick={() => setIdentityOpen(true)}>Verify identity</button></div>}
             {profile?.registered && (
               <>
                 <div className="record-header">
@@ -1400,17 +1417,19 @@ export function CredrepApp() {
           <section className="modal identity-modal" role="dialog" aria-modal="true" aria-labelledby="identity-title">
             <button className="modal-close" onClick={() => setIdentityOpen(false)} aria-label="Close"><CloseIcon /></button>
             <ShieldIcon className="identity-icon" />
-            <h2 id="identity-title">X verification</h2>
+            <h2 id="identity-title">Identity verification</h2>
             {identity?.bound && !identity.reverificationDue && !challenge?.active ? (
-              <div className="verified-box"><strong>@{identity.handle}</strong><span>Verified until {formatDate(identity.verifiedUntil)}</span></div>
+              <div className="verified-box"><strong>@{identity.handle} · Farcaster @{identity.farcasterHandle}</strong><span>Verified until {formatDate(identity.verifiedUntil)}</span></div>
             ) : challenge?.active ? (
               <form onSubmit={verifyProof}>
-                <label className="field-label"><span>Post this exact text</span><textarea readOnly value={challenge.challenge} /></label>
+                <label className="field-label"><span>Post this exact text on X and Farcaster</span><textarea readOnly value={challenge.challenge} /></label>
                 <div className="inline-actions">
                   <button type="button" onClick={() => navigator.clipboard.writeText(challenge.challenge)}>Copy</button>
                   <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(challenge.challenge)}`} target="_blank" rel="noreferrer">Post on X ↗</a>
+                  <a href={`https://farcaster.xyz/~/compose?text=${encodeURIComponent(challenge.challenge)}`} target="_blank" rel="noreferrer">Cast on Farcaster ↗</a>
                 </div>
-                <label className="field-label"><span>Post URL</span><input className="text-input" required disabled={Boolean(verificationAttempt) || pendingAction?.status === "PENDING" || !networkReady} value={proofUrl} onChange={(event) => setProofUrl(event.target.value)} placeholder="https://x.com/you/status/…" /></label>
+                <label className="field-label"><span>X post URL</span><input className="text-input" required disabled={Boolean(verificationAttempt) || pendingAction?.status === "PENDING" || !networkReady} value={proofUrl} onChange={(event) => setProofUrl(event.target.value)} placeholder="https://x.com/you/status/…" /></label>
+                <label className="field-label"><span>Farcaster cast URL</span><input className="text-input" required disabled={Boolean(verificationAttempt) || pendingAction?.status === "PENDING" || !networkReady} value={farcasterProofUrl} onChange={(event) => setFarcasterProofUrl(event.target.value)} placeholder="https://farcaster.xyz/you/0x…" /></label>
                 {verificationAttempt ? (
                   <div className={`verification-status verification-status-${verificationAttempt.status.toLowerCase()}`} role="status">
                     <strong>{verificationAttempt.status === "PENDING" ? "Verification pending" : "Verification failed"}</strong>
@@ -1447,7 +1466,7 @@ export function CredrepApp() {
               </form>
             ) : (
               <div className="identity-start">
-                <p>{identity?.bound ? "A fresh post rechecks that you still control the same X account." : "One X account binds to one wallet."}</p>
+                <p>{identity?.bound ? "Fresh X and Farcaster posts recheck both accounts." : "One X account and one Farcaster ID bind to one wallet."}</p>
                 <button className="primary-button" disabled={busy === "identity" || transactionInFlight || !networkReady} onClick={beginProof}>{busy === "identity" ? "Creating…" : identity?.bound ? "Create recheck" : "Create verification"}</button>
               </div>
             )}

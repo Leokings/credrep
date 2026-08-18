@@ -56,6 +56,10 @@ export type ChainProfile = {
   xHandle: string;
   xIdentityStatus: IdentityStatus;
   xVerifiedUntil: number;
+  farcasterIdentityBound: boolean;
+  farcasterFid: string;
+  farcasterHandle: string;
+  dualSourceIdentityBound: boolean;
   recoveryActive: boolean;
   recoveryNextAt: number;
   recoverableReputation: number;
@@ -71,10 +75,14 @@ export type BindingChallenge = {
 
 export type ChainIdentity = {
   bound: boolean;
+  dualSourceBound: boolean;
   status: IdentityStatus;
   handle: string;
   identityId: string;
   proofUrl: string;
+  farcasterFid: string;
+  farcasterHandle: string;
+  farcasterProofUrl: string;
   verifiedAt: number;
   verifiedUntil: number;
   graceUntil: number;
@@ -98,6 +106,8 @@ export type ChainMarket = {
   description: string;
   slug: string;
   sourceUrl: string;
+  conditionId: string;
+  settlementSource: string;
   endTimeUnix: number;
   voidAfterUnix: number;
   status: "OPEN" | "RESOLVED" | "VOID";
@@ -125,11 +135,13 @@ export type ConnectedCredenceWallet = {
   beginXBinding(onSubmitted?: OnSubmitted): Promise<`0x${string}`>;
   verifyXBinding(
     proofUrl: string,
+    farcasterProofUrl: string,
     onSubmitted?: OnSubmitted,
   ): Promise<`0x${string}`>;
   beginXReverification(onSubmitted?: OnSubmitted): Promise<`0x${string}`>;
   verifyXReverification(
     proofUrl: string,
+    farcasterProofUrl: string,
     onSubmitted?: OnSubmitted,
   ): Promise<`0x${string}`>;
   startRecovery(onSubmitted?: OnSubmitted): Promise<`0x${string}`>;
@@ -198,6 +210,39 @@ export function normalizeXProofUrl(raw: string): string {
   }
 
   return `https://x.com/${parts[0]}/status/${parts[2]}`;
+}
+
+export function normalizeFarcasterCastUrl(raw: string): string {
+  const value = raw.trim();
+  if (value.length < 30 || value.length > 300) {
+    throw new Error("Paste the full URL of your public Farcaster cast.");
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("Paste a valid Farcaster cast URL.");
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  if (parsed.protocol !== "https:" || host !== "farcaster.xyz") {
+    throw new Error("The second proof must be a cast URL from farcaster.xyz.");
+  }
+  const parts = parsed.pathname.split("/").filter(Boolean);
+  const validHandle =
+    parts.length > 0 &&
+    /^[A-Za-z0-9][A-Za-z0-9_.-]{0,30}[A-Za-z0-9]$/.test(parts[0]);
+  const singleCharacterHandle =
+    parts.length > 0 && /^[A-Za-z0-9]$/.test(parts[0]);
+  if (
+    parts.length !== 2 ||
+    (!validHandle && !singleCharacterHandle) ||
+    !/^0x[0-9a-fA-F]{8,40}$/.test(parts[1])
+  ) {
+    throw new Error("Paste a Farcaster cast URL, not a profile or feed URL.");
+  }
+  return `https://farcaster.xyz/${parts[0].toLowerCase()}/${parts[1].toLowerCase()}`;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -306,6 +351,10 @@ export async function readChainProfile(address: string): Promise<ChainProfile> {
     xHandle: asString(raw.x_handle),
     xIdentityStatus: asString(raw.x_identity_status) as IdentityStatus,
     xVerifiedUntil: asNumber(raw.x_verified_until),
+    farcasterIdentityBound: Boolean(raw.farcaster_identity_bound),
+    farcasterFid: asString(raw.farcaster_fid),
+    farcasterHandle: asString(raw.farcaster_handle),
+    dualSourceIdentityBound: Boolean(raw.dual_source_identity_bound),
     recoveryActive: Boolean(raw.recovery_active),
     recoveryNextAt: asNumber(raw.recovery_next_at),
     recoverableReputation: asNumber(raw.recoverable_reputation),
@@ -341,10 +390,14 @@ export async function readChainIdentity(address: string): Promise<ChainIdentity>
   );
   return {
     bound: Boolean(raw.bound),
+    dualSourceBound: Boolean(raw.dual_source_bound),
     status: asString(raw.status) as IdentityStatus,
     handle: asString(raw.handle),
     identityId: asString(raw.identity_id),
     proofUrl: asString(raw.proof_url),
+    farcasterFid: asString(raw.farcaster_fid),
+    farcasterHandle: asString(raw.farcaster_handle),
+    farcasterProofUrl: asString(raw.farcaster_proof_url),
     verifiedAt: asNumber(raw.verified_at),
     verifiedUntil: asNumber(raw.verified_until),
     graceUntil: asNumber(raw.grace_until),
@@ -385,6 +438,8 @@ export async function readChainMarket(marketId: string): Promise<ChainMarket> {
     description: asString(raw.description),
     slug: asString(raw.slug),
     sourceUrl: asString(raw.source_url),
+    conditionId: asString(raw.condition_id),
+    settlementSource: asString(raw.settlement_source),
     endTimeUnix: asNumber(raw.end_time_unix),
     voidAfterUnix: asNumber(raw.void_after_unix),
     status: asString(raw.status) as ChainMarket["status"],
@@ -558,12 +613,12 @@ export async function connectCredenceWallet(
       return signature as `0x${string}`;
     },
     beginXBinding: (onSubmitted) => write("begin_x_binding", [], onSubmitted),
-    verifyXBinding: (proofUrl, onSubmitted) =>
-      write("verify_x_binding", [proofUrl], onSubmitted),
+    verifyXBinding: (proofUrl, farcasterProofUrl, onSubmitted) =>
+      write("verify_x_binding", [proofUrl, farcasterProofUrl], onSubmitted),
     beginXReverification: (onSubmitted) =>
       write("begin_x_reverification", [], onSubmitted),
-    verifyXReverification: (proofUrl, onSubmitted) =>
-      write("verify_x_reverification", [proofUrl], onSubmitted),
+    verifyXReverification: (proofUrl, farcasterProofUrl, onSubmitted) =>
+      write("verify_x_reverification", [proofUrl, farcasterProofUrl], onSubmitted),
     startRecovery: (onSubmitted) => write("start_recovery", [], onSubmitted),
     claimRecovery: (onSubmitted) => write("claim_recovery", [], onSubmitted),
     makePrediction: (
