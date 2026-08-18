@@ -10,7 +10,7 @@ import { normalizeWalletAddress } from "./wallet-address";
 
 const CHALLENGE_TTL_MS = 5 * 60_000;
 const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
-const SESSION_COOKIE = "credence_index_session";
+const SESSION_COOKIE = "credrep_studionet_index_session";
 
 export class WalletAuthorizationError extends Error {
   constructor(message = "Wallet authorization is invalid or expired.") {
@@ -23,7 +23,7 @@ function sessionSecret(): string {
   const configured = process.env.INDEX_SESSION_SECRET;
   if (configured) return configured;
   if (process.env.NODE_ENV !== "production") {
-    return "credence-local-development-index-session";
+    return "credrep-studionet-development-index-session";
   }
   throw new Error("INDEX_SESSION_SECRET is not configured.");
 }
@@ -71,7 +71,7 @@ export function hasValidIndexSession(
       Buffer.from(payloadPart, "base64url").toString("utf8"),
     ) as { version?: unknown; address?: unknown; expiresAt?: unknown };
     return (
-      payload.version === 1 &&
+      payload.version === 2 &&
       payload.address === normalizeWalletAddress(address) &&
       typeof payload.expiresAt === "number" &&
       payload.expiresAt > Date.now()
@@ -84,7 +84,7 @@ export function hasValidIndexSession(
 export function createIndexSessionCookie(address: string): string {
   const payloadPart = Buffer.from(
     JSON.stringify({
-      version: 1,
+      version: 2,
       address: normalizeWalletAddress(address),
       expiresAt: Date.now() + SESSION_TTL_SECONDS * 1_000,
     }),
@@ -108,7 +108,7 @@ export async function issueIndexChallenge(request: Request, address: string) {
     `Issued at: ${now.toISOString()}`,
     `Expires at: ${expiresAt.toISOString()}`,
     "",
-    "Purpose: refresh this wallet's public Bradbury prediction record.",
+    "Purpose: refresh this wallet's public StudioNet prediction record.",
     "This signature cannot submit a transaction, move funds, or spend REP.",
   ].join("\n");
 

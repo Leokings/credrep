@@ -1,6 +1,6 @@
 import { count, eq } from "drizzle-orm";
 import { chainProfiles, sourcedMarkets } from "../../../db/schema";
-import { CREDENCE_CONTRACT_ADDRESS } from "../../../lib/deployment";
+import { CREDREP_CONTRACT_ADDRESS } from "../../../lib/deployment";
 import { createRequestLogger } from "../../../lib/server-logging";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   try {
     const { getDb } = await import("../../../db");
     const db = getDb();
-    const contractAddress = CREDENCE_CONTRACT_ADDRESS.toLowerCase();
+    const contractAddress = CREDREP_CONTRACT_ADDRESS.toLowerCase();
     const [profiles, markets] = await Promise.all([
       db
         .select({ value: count() })
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
         database: "available",
         indexedProfiles: profiles[0]?.value ?? 0,
         sourcedMarkets: markets[0]?.value ?? 0,
-        contractAddress: CREDENCE_CONTRACT_ADDRESS,
+        contractAddress: CREDREP_CONTRACT_ADDRESS,
         deploymentRegion: process.env.VERCEL_REGION ?? "local",
         checkedAt: new Date().toISOString(),
       },

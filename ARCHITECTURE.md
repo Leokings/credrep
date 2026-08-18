@@ -75,7 +75,7 @@ same-site session scoped to `/api/index` for seven days. The message explicitly
 cannot authorize a transaction or spend REP. Index and challenge endpoints are
 rate-limited separately by wallet and keyed network hash.
 
-The Bradbury contract registers the dedicated CREDREP deployer as its upgrade
+The StudioNet contract registers the dedicated CREDREP deployer as its upgrade
 authority. The authority can schedule a code hash, but execution is blocked for
 seven days. The pending hash and execution time are public, and the authority
 can cancel during the delay. Future code upgrades must preserve the append-only
@@ -83,10 +83,10 @@ storage layout, and the deployed code and transactions remain inspectable.
 
 ## Transaction lifecycle
 
-The browser requires Bradbury before enabling a write. Once a wallet submits a
+The browser requires StudioNet before enabling a write. Once a wallet submits a
 transaction, CREDREP stores its hash on that device, blocks duplicate writes,
 and restores the pending status after a refresh. The user can recheck it or open
-the Bradbury Explorer until the transaction reaches a terminal state.
+the StudioNet Explorer until the transaction reaches a terminal state.
 
 ## Operations
 

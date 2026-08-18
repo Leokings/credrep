@@ -60,11 +60,11 @@ test("server-renders the CREDREP product", async () => {
   assert.match(html, /Live questions/);
   assert.match(html, /Community/);
   assert.match(html, /Prediction Score/);
-  assert.match(html, /Bradbury/);
-  assert.match(html, /0x7aD0ca207FdD300801FaD7Df67DDb8A8A1E13dBd/i);
+  assert.match(html, /StudioNet/);
+  assert.match(html, /0xd86C67800071c245Bd7BED0AA8C7b34f9a45b868/i);
   assert.match(html, /Connect wallet/);
   assert.match(html, /opengraph-image/);
-  assert.doesNotMatch(html, /network-pill|Polymarket · Bradbury/);
+  assert.doesNotMatch(html, /network-pill/);
   assert.doesNotMatch(
     html,
     /Manchester United|Maya Chen|Make your claim|People backing their word/,

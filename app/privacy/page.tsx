@@ -9,7 +9,7 @@ export default function PrivacyPage() {
       <section>
         <h2>Data CREDREP processes</h2>
         <p>
-          CREDREP indexes public Bradbury data for connected wallet addresses,
+          CREDREP indexes public StudioNet data for connected wallet addresses,
           including public X handles and proof URLs recorded by the contract,
           REP balances, forecasts, confidence, and outcomes. The app also stores
           sourced market metadata and short-lived wallet authorization

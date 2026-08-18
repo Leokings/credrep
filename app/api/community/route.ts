@@ -1,6 +1,6 @@
 import { and, count, desc, eq } from "drizzle-orm";
 import { chainMarkets, chainPositions, chainProfiles } from "../../../db/schema";
-import { CREDENCE_CONTRACT_ADDRESS } from "../../../lib/deployment";
+import { CREDREP_CONTRACT_ADDRESS } from "../../../lib/deployment";
 import type { CommunityFeed } from "../../../lib/community-data";
 import { createRequestLogger } from "../../../lib/server-logging";
 
@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   try {
     const { getDb } = await import("../../../db");
     const db = getDb();
-    const contractAddress = CREDENCE_CONTRACT_ADDRESS.toLowerCase();
+    const contractAddress = CREDREP_CONTRACT_ADDRESS.toLowerCase();
 
     const [profileCount, profiles, activity] = await Promise.all([
       db
@@ -70,7 +70,7 @@ export async function GET(request: Request) {
     });
     return Response.json(
       {
-        contractAddress: CREDENCE_CONTRACT_ADDRESS,
+        contractAddress: CREDREP_CONTRACT_ADDRESS,
         indexedProfiles: profileCount[0]?.value ?? 0,
         leaderboard: profiles.map((profile, index) => ({
           rank: index + 1,

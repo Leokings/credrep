@@ -9,8 +9,8 @@ export default function TermsPage() {
       <section>
         <h2>What CREDREP is</h2>
         <p>
-          CREDREP is experimental social-forecasting software on the GenLayer
-          Bradbury testnet. It lets one person back a forecast with that
+          CREDREP is experimental social-forecasting software on GenLayer
+          StudioNet. It lets one person back a forecast with that
           person&apos;s non-transferable reputation points. It is not a betting
           pool, exchange, sportsbook, or investment product.
         </p>

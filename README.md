@@ -26,14 +26,12 @@ authoritative for identity, REP, positions, scores, and settlement.
 
 Hosted consensus-test evidence is recorded in
 [`docs/submission-evidence/studionet-2026-08-18.md`](docs/submission-evidence/studionet-2026-08-18.md).
-Current Bradbury identity and forecast receipts are recorded in the canonical
-[`docs/submission-evidence/bradbury.md`](docs/submission-evidence/bradbury.md).
 
-## Bradbury
+## StudioNet
 
-- Chain ID: `4221`
-- Contract: [`0x7aD0ca207FdD300801FaD7Df67DDb8A8A1E13dBd`](https://explorer-bradbury.genlayer.com/address/0x7aD0ca207FdD300801FaD7Df67DDb8A8A1E13dBd)
-- Deployment transaction: [`0xeb18133c…577d7a`](https://explorer-bradbury.genlayer.com/tx/0xeb18133c1470fe956ea4c0e89cdc2e419f8ed9fe5e0959e21060ca1937577d7a)
+- Chain ID: `61999`
+- Contract: [`0xd86C67800071c245Bd7BED0AA8C7b34f9a45b868`](https://explorer-studio.genlayer.com/address/0xd86C67800071c245Bd7BED0AA8C7b34f9a45b868)
+- Deployment transaction: [`0xf3c7c4ef…37d44d83`](https://explorer-studio.genlayer.com/tx/0xf3c7c4ef3f706a969c994c635191643372fe72a092f0c54ac9e19f8f37d44d83)
 - Upgrade authority: `0x91B1b2D1f2De66400fcbeAEbadB8a5330eB28DC0`
 
 X and Farcaster binding and monthly reverification posts use `credrep-bind:`
@@ -72,7 +70,8 @@ npm run db:migrate
 ```bash
 npm test
 npm run lint
-genvm-lint check contracts/credence_claims.py
+python scripts/build_contract_artifact.py
+genvm-lint check contracts/credence_claims.deploy.py
 pytest tests/direct -q
 gltest tests/integration/test_credence_forecasts.py -v -s --network studionet
 ```
@@ -93,7 +92,7 @@ writes are rate-limited by wallet and keyed network hash.
 
 ## Wallet safety
 
-The frontend requests account access, adds or switches to Bradbury when needed,
+The frontend requests account access, adds or switches to StudioNet when needed,
 signs the human-readable public-index authorization above, and submits
 zero-value calls to the CREDREP contract. It has no token or NFT approval path,
 no asset-transfer path, and never asks for a seed phrase or private key.

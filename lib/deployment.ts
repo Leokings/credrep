@@ -1,12 +1,10 @@
-export const CREDENCE_CONTRACT_ADDRESS =
-  "0x7aD0ca207FdD300801FaD7Df67DDb8A8A1E13dBd" as const;
-export const CREDENCE_DEPLOYMENT_TRANSACTION =
-  "0xeb18133c1470fe956ea4c0e89cdc2e419f8ed9fe5e0959e21060ca1937577d7a" as const;
-export const BRADBURY_EXPLORER_URL =
-  "https://explorer-bradbury.genlayer.com/";
-export const BRADBURY_FAUCET_URL =
-  "https://testnet-faucet.genlayer.foundation/";
-export const BRADBURY_CHAIN_ID = 4221;
+export const CREDREP_CONTRACT_ADDRESS =
+  "0xd86C67800071c245Bd7BED0AA8C7b34f9a45b868" as const;
+export const CREDREP_DEPLOYMENT_TRANSACTION =
+  "0xf3c7c4ef3f706a969c994c635191643372fe72a092f0c54ac9e19f8f37d44d83" as const;
+export const STUDIONET_EXPLORER_URL =
+  "https://explorer-studio.genlayer.com/";
+export const STUDIONET_CHAIN_ID = 61999;
 
 export function shortAddress(address: string) {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;

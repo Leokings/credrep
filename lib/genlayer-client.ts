@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "genlayer-js";
-import { testnetBradbury } from "genlayer-js/chains";
+import { studionet } from "genlayer-js/chains";
 import {
   type CalldataEncodable,
   CalldataAddress,
@@ -10,9 +10,9 @@ import {
   TransactionStatus,
 } from "genlayer-js/types";
 import {
-  BRADBURY_CHAIN_ID,
-  BRADBURY_EXPLORER_URL,
-  CREDENCE_CONTRACT_ADDRESS,
+  CREDREP_CONTRACT_ADDRESS,
+  STUDIONET_CHAIN_ID,
+  STUDIONET_EXPLORER_URL,
 } from "./deployment";
 
 type ProviderListener = (value: unknown) => void;
@@ -169,7 +169,7 @@ export type ConnectedCredenceWallet = {
   ): Promise<`0x${string}`>;
 };
 
-const readClient = createClient({ chain: testnetBradbury });
+const readClient = createClient({ chain: studionet });
 
 export class CredenceTransactionExecutionError extends Error {
   readonly transactionHash: `0x${string}`;
@@ -247,7 +247,7 @@ export function normalizeFarcasterCastUrl(raw: string): string {
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Bradbury returned an unexpected contract response.");
+    throw new Error("StudioNet returned an unexpected contract response.");
   }
   return value as Record<string, unknown>;
 }
@@ -255,7 +255,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 function asNumber(value: unknown): number {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number < 0) {
-    throw new Error("Bradbury returned an invalid numeric value.");
+    throw new Error("StudioNet returned an invalid numeric value.");
   }
   return number;
 }
@@ -330,7 +330,7 @@ export async function readCredenceTransactionState(
 export async function readChainProfile(address: string): Promise<ChainProfile> {
   const raw = asRecord(
     await readClient.readContract({
-      address: CREDENCE_CONTRACT_ADDRESS,
+      address: CREDREP_CONTRACT_ADDRESS,
       functionName: "get_user_profile",
       args: [toCalldataAddress(address)],
     }),
@@ -366,7 +366,7 @@ export async function readBindingChallenge(
 ): Promise<BindingChallenge> {
   const raw = asRecord(
     await readClient.readContract({
-      address: CREDENCE_CONTRACT_ADDRESS,
+      address: CREDREP_CONTRACT_ADDRESS,
       functionName: "get_binding_challenge",
       args: [toCalldataAddress(address)],
     }),
@@ -383,7 +383,7 @@ export async function readBindingChallenge(
 export async function readChainIdentity(address: string): Promise<ChainIdentity> {
   const raw = asRecord(
     await readClient.readContract({
-      address: CREDENCE_CONTRACT_ADDRESS,
+      address: CREDREP_CONTRACT_ADDRESS,
       functionName: "get_identity_status",
       args: [toCalldataAddress(address)],
     }),
@@ -410,7 +410,7 @@ export async function readChainIdentity(address: string): Promise<ChainIdentity>
 export async function readProtocolStats(): Promise<ChainProtocolStats> {
   const raw = asRecord(
     await readClient.readContract({
-      address: CREDENCE_CONTRACT_ADDRESS,
+      address: CREDREP_CONTRACT_ADDRESS,
       functionName: "get_protocol_stats",
     }),
   );
@@ -427,7 +427,7 @@ export async function readProtocolStats(): Promise<ChainProtocolStats> {
 export async function readChainMarket(marketId: string): Promise<ChainMarket> {
   const raw = asRecord(
     await readClient.readContract({
-      address: CREDENCE_CONTRACT_ADDRESS,
+      address: CREDREP_CONTRACT_ADDRESS,
       functionName: "get_market",
       args: [marketId],
     }),
@@ -457,18 +457,18 @@ export async function readUserPositions(
   const positionCount = Math.min(count, 100);
   const positionOffset = Math.max(0, count - positionCount);
   const rawIds = await readClient.readContract({
-    address: CREDENCE_CONTRACT_ADDRESS,
+    address: CREDREP_CONTRACT_ADDRESS,
     functionName: "get_user_position_ids",
     args: [toCalldataAddress(address), BigInt(positionOffset), BigInt(positionCount)],
   });
-  if (!Array.isArray(rawIds)) throw new Error("Bradbury returned an invalid position index.");
+  if (!Array.isArray(rawIds)) throw new Error("StudioNet returned an invalid position index.");
 
   const positions = await Promise.all(
     rawIds.map(async (value) => {
       const marketId = asString(value);
       const [positionRaw, market] = await Promise.all([
         readClient.readContract({
-          address: CREDENCE_CONTRACT_ADDRESS,
+          address: CREDREP_CONTRACT_ADDRESS,
           functionName: "get_position",
           args: [toCalldataAddress(address), marketId],
         }),
@@ -494,23 +494,23 @@ export async function readUserPositions(
 
 function ethereumProvider(): BrowserProvider {
   const provider = (window as typeof window & { ethereum?: BrowserProvider }).ethereum;
-  if (!provider) throw new Error("Install MetaMask to connect a Bradbury wallet.");
+  if (!provider) throw new Error("Install MetaMask to connect a StudioNet wallet.");
   return provider;
 }
 
-export function isBradburyChainId(value: unknown): boolean {
+export function isStudioNetChainId(value: unknown): boolean {
   if (typeof value !== "string" || !/^0x[0-9a-f]+$/i.test(value)) return false;
-  return Number.parseInt(value.slice(2), 16) === BRADBURY_CHAIN_ID;
+  return Number.parseInt(value.slice(2), 16) === STUDIONET_CHAIN_ID;
 }
 
-export async function isBradburyNetwork(): Promise<boolean> {
+export async function isStudioNetNetwork(): Promise<boolean> {
   const chainId = await ethereumProvider().request({ method: "eth_chainId" });
-  return isBradburyChainId(chainId);
+  return isStudioNetChainId(chainId);
 }
 
-export async function switchToBradbury(): Promise<void> {
+export async function switchToStudioNet(): Promise<void> {
   const provider = ethereumProvider();
-  const chainId = `0x${BRADBURY_CHAIN_ID.toString(16)}`;
+  const chainId = `0x${STUDIONET_CHAIN_ID.toString(16)}`;
   try {
     await provider.request({
       method: "wallet_switchEthereumChain",
@@ -527,10 +527,10 @@ export async function switchToBradbury(): Promise<void> {
       params: [
         {
           chainId,
-          chainName: testnetBradbury.name,
-          nativeCurrency: testnetBradbury.nativeCurrency,
-          rpcUrls: [...testnetBradbury.rpcUrls.default.http],
-          blockExplorerUrls: [BRADBURY_EXPLORER_URL],
+          chainName: studionet.name,
+          nativeCurrency: studionet.nativeCurrency,
+          rpcUrls: [...studionet.rpcUrls.default.http],
+          blockExplorerUrls: [STUDIONET_EXPLORER_URL],
         },
       ],
     });
@@ -575,14 +575,14 @@ export async function connectCredenceWallet(
   }
   const address = accounts[0] as `0x${string}`;
   toCalldataAddress(address);
-  if (!(await isBradburyNetwork())) await switchToBradbury();
+  if (!(await isStudioNetNetwork())) await switchToStudioNet();
 
   const writeClient = createClient({
-    chain: testnetBradbury,
+    chain: studionet,
     account: address,
     provider,
   });
-  await writeClient.connect("testnetBradbury");
+  await writeClient.connect("studionet");
 
   async function write(
     functionName: string,
@@ -590,7 +590,7 @@ export async function connectCredenceWallet(
     onSubmitted?: OnSubmitted,
   ): Promise<`0x${string}`> {
     const transactionHash = (await writeClient.writeContract({
-      address: CREDENCE_CONTRACT_ADDRESS,
+      address: CREDREP_CONTRACT_ADDRESS,
       functionName,
       args,
       value: 0n,

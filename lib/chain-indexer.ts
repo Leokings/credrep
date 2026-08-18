@@ -1,17 +1,17 @@
 import { createClient } from "genlayer-js";
-import { testnetBradbury } from "genlayer-js/chains";
+import { studionet } from "genlayer-js/chains";
 import { CalldataAddress } from "genlayer-js/types";
 import { chainMarkets, chainPositions, chainProfiles } from "../db/schema";
-import { CREDENCE_CONTRACT_ADDRESS } from "./deployment";
+import { CREDREP_CONTRACT_ADDRESS } from "./deployment";
 import { normalizeWalletAddress } from "./wallet-address";
 
-const readClient = createClient({ chain: testnetBradbury });
-const CONTRACT_KEY = CREDENCE_CONTRACT_ADDRESS.toLowerCase();
+const readClient = createClient({ chain: studionet });
+const CONTRACT_KEY = CREDREP_CONTRACT_ADDRESS.toLowerCase();
 const MAX_INDEXED_POSITIONS = 100;
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Bradbury returned an unexpected contract response.");
+    throw new Error("StudioNet returned an unexpected contract response.");
   }
   return value as Record<string, unknown>;
 }
@@ -19,7 +19,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 function asNumber(value: unknown): number {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number < 0) {
-    throw new Error("Bradbury returned an invalid numeric value.");
+    throw new Error("StudioNet returned an invalid numeric value.");
   }
   return number;
 }
@@ -31,7 +31,7 @@ function asString(value: unknown): string {
 function asDate(value: unknown): Date {
   const parsed = new Date(asString(value));
   if (Number.isNaN(parsed.getTime())) {
-    throw new Error("Bradbury returned an invalid timestamp.");
+    throw new Error("StudioNet returned an invalid timestamp.");
   }
   return parsed;
 }
@@ -50,12 +50,12 @@ function toCalldataAddress(address: string) {
   );
 }
 
-export async function indexBradburyWallet(address: string) {
+export async function indexStudioNetWallet(address: string) {
   const walletAddress = normalizeWalletAddress(address);
   const calldataAddress = toCalldataAddress(walletAddress);
   const profile = asRecord(
     await readClient.readContract({
-      address: CREDENCE_CONTRACT_ADDRESS,
+      address: CREDREP_CONTRACT_ADDRESS,
       functionName: "get_user_profile",
       args: [calldataAddress],
     }),
@@ -70,28 +70,28 @@ export async function indexBradburyWallet(address: string) {
   const positionOffset = Math.max(0, predictionsMade - positionCount);
   const rawIds = positionCount
     ? await readClient.readContract({
-        address: CREDENCE_CONTRACT_ADDRESS,
+        address: CREDREP_CONTRACT_ADDRESS,
         functionName: "get_user_position_ids",
         args: [calldataAddress, BigInt(positionOffset), BigInt(positionCount)],
       })
     : [];
 
   if (!Array.isArray(rawIds)) {
-    throw new Error("Bradbury returned an invalid position index.");
+    throw new Error("StudioNet returned an invalid position index.");
   }
 
   const positions = await Promise.all(
     rawIds.map(async (rawId) => {
       const marketId = asString(rawId);
-      if (!marketId) throw new Error("Bradbury returned an invalid market ID.");
+      if (!marketId) throw new Error("StudioNet returned an invalid market ID.");
       const [rawPosition, rawMarket] = await Promise.all([
         readClient.readContract({
-          address: CREDENCE_CONTRACT_ADDRESS,
+          address: CREDREP_CONTRACT_ADDRESS,
           functionName: "get_position",
           args: [calldataAddress, marketId],
         }),
         readClient.readContract({
-          address: CREDENCE_CONTRACT_ADDRESS,
+          address: CREDREP_CONTRACT_ADDRESS,
           functionName: "get_market",
           args: [marketId],
         }),

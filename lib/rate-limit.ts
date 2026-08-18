@@ -16,7 +16,7 @@ function rateLimitSecret(): string {
   const configured = process.env.RATE_LIMIT_SECRET;
   if (configured) return configured;
   if (process.env.NODE_ENV !== "production") {
-    return "credence-local-development-rate-limit";
+    return "credrep-local-development-rate-limit";
   }
   throw new Error("RATE_LIMIT_SECRET is not configured.");
 }

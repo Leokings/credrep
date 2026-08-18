@@ -9,17 +9,20 @@ window.
 
 | Field | Value |
 | --- | --- |
-| Run time | 2026-08-18T05:46:00-07:00 |
+| Run time | 2026-08-18T06:21:00-07:00 |
 | Network | `studionet` |
 | RPC | `https://studio.genlayer.com/api` |
 | Leader-only mode | `false` |
 | Test runner | `genlayer-test 0.29.2`, `pytest 9.1.1` |
 | Python | `3.12.13` |
-| Live Polymarket market ID | `601835` |
-| StudioNet contract | `0xDEd3428055f7bC6aa7D1cEF9f010f4D2BB610950` |
-| StudioNet sync transaction | `0x4c4a424d7e5fa6543b3357be7367891549480216b84cd3c3e199cd37b4eda495` |
+| Production contract | [`0xd86C67800071c245Bd7BED0AA8C7b34f9a45b868`](https://explorer-studio.genlayer.com/address/0xd86C67800071c245Bd7BED0AA8C7b34f9a45b868) |
+| Production deployment | [`0xf3c7c4ef3f706a969c994c635191643372fe72a092f0c54ac9e19f8f37d44d83`](https://explorer-studio.genlayer.com/tx/0xf3c7c4ef3f706a969c994c635191643372fe72a092f0c54ac9e19f8f37d44d83) |
+| Fresh production state | `0 users / 0 markets / 0 predictions` |
+| Live Polymarket market ID | `2252245` |
+| Disposable integration contract | `0x490765CF50E3F70cA4CABe961294607347E13e09` |
+| Integration sync transaction | `0x9a134e0f1fe2b98ac929a741012e12c786aae072ea2a5b1b6b48d5beaf84b584` |
 | Leader execution result | `SUCCESS` |
-| Test duration | `40.32s` |
+| Test duration | `50.26s` |
 
 ## Tested assertions
 
@@ -51,10 +54,13 @@ StudioNet is gasless, so this test does not require funded GEN.
 
 ```text
 contracts/credence_claims.py
-SHA256 0A029B5C7FF97DCCC43ABFC81614CB3E31F64199D651529E9EA06EEE8952D994
+SHA256 8CA03202AE9091164D98F9A961642BF01B490DF987687DCD6F13439ADF74B34B
+
+contracts/credence_claims.deploy.py
+SHA256 F83CAC00D7BF656A50BC5F5B84D867A83CADFED5757A1ECD9B3AFD2C164A3317
 
 tests/integration/test_credence_forecasts.py
-SHA256 0EA0ACB4472540AAD28A96313185CA53DA6589C404424128D0656A8F5DCFAC6A
+SHA256 3763D4B2147CF7F4CA0B093E7D3CA21DCC0DAD72024624A274714402E5AC003F
 
 gltest.config.yaml
 SHA256 81E188ADC1A80EB56E9327BC5C5E6D60ECC7CDE3AA5CA320B04269D449CD453A
@@ -69,13 +75,13 @@ plugins: anyio-4.14.2, genlayer-test-0.29.2
 collected 1 item
 
 tests/integration/test_credence_forecasts.py::test_live_polymarket_question_reaches_genlayer_consensus
-EVIDENCE market_id=601835
-EVIDENCE contract_address=0xDEd3428055f7bC6aa7D1cEF9f010f4D2BB610950
-EVIDENCE sync_transaction=0x4c4a424d7e5fa6543b3357be7367891549480216b84cd3c3e199cd37b4eda495
+EVIDENCE market_id=2252245
+EVIDENCE contract_address=0x490765CF50E3F70cA4CABe961294607347E13e09
+EVIDENCE sync_transaction=0x9a134e0f1fe2b98ac929a741012e12c786aae072ea2a5b1b6b48d5beaf84b584
 EVIDENCE sync_execution_result=SUCCESS
 PASSED
 
-============================= 1 passed in 40.32s ==============================
+============================= 1 passed in 50.26s ==============================
 INFO: File `gltest.config.yaml` found in the current directory, using it
 INFO: RPC URL: https://studio.genlayer.com/api
 INFO: Selected Network: studionet
@@ -83,5 +89,4 @@ INFO: Leader only mode: False
 ```
 
 This file records a point-in-time hosted-network run. The integration test and
-hashes above are the reproducible evidence; StudioNet state itself is not a
-substitute for Bradbury end-to-end testing.
+hashes above are the reproducible evidence.

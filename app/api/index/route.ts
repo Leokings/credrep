@@ -4,7 +4,7 @@ import {
   verifyIndexChallenge,
   WalletAuthorizationError,
 } from "../../../lib/index-auth";
-import { indexBradburyWallet } from "../../../lib/chain-indexer";
+import { indexStudioNetWallet } from "../../../lib/chain-indexer";
 import {
   clientAddress,
   enforceRateLimit,
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
       setCookie = createIndexSessionCookie(address);
     }
 
-    const result = await indexBradburyWallet(address);
+    const result = await indexStudioNetWallet(address);
     log.done(200, { indexed: result.indexed, positions: result.positions });
     return Response.json(result, {
       headers: {

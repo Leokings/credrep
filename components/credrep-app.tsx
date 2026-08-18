@@ -11,7 +11,7 @@ import type {
 import {
   CredenceTransactionExecutionError,
   connectCredenceWallet,
-  isBradburyChainId,
+  isStudioNetChainId,
   normalizeFarcasterCastUrl,
   normalizeXProofUrl,
   readBindingChallenge,
@@ -20,7 +20,7 @@ import {
   readCredenceTransactionState,
   readProtocolStats,
   readUserPositions,
-  switchToBradbury,
+  switchToStudioNet,
   watchCredenceProvider,
   type BindingChallenge,
   type ChainIdentity,
@@ -30,9 +30,8 @@ import {
   type ConnectedCredenceWallet,
 } from "../lib/genlayer-client";
 import {
-  BRADBURY_EXPLORER_URL,
-  BRADBURY_FAUCET_URL,
-  CREDENCE_CONTRACT_ADDRESS,
+  CREDREP_CONTRACT_ADDRESS,
+  STUDIONET_EXPLORER_URL,
   shortAddress,
 } from "../lib/deployment";
 import { ClockIcon, CloseIcon, MarkIcon, SearchIcon, ShieldIcon } from "./icons";
@@ -76,11 +75,11 @@ const CATEGORIES: Array<"All" | MarketCategory> = [
 ];
 
 function verificationStorageKey(address: string) {
-  return `credence:x-verification:${CREDENCE_CONTRACT_ADDRESS.toLowerCase()}:${address.toLowerCase()}`;
+  return `credrep:x-verification:${CREDREP_CONTRACT_ADDRESS.toLowerCase()}:${address.toLowerCase()}`;
 }
 
 function actionStorageKey(address: string) {
-  return `credence:pending-action:${CREDENCE_CONTRACT_ADDRESS.toLowerCase()}:${address.toLowerCase()}`;
+  return `credrep:pending-action:${CREDREP_CONTRACT_ADDRESS.toLowerCase()}:${address.toLowerCase()}`;
 }
 
 function readVerificationAttempt(address: string): VerificationAttempt | null {
@@ -165,7 +164,7 @@ function writePendingAction(address: string, action: PendingAction | null) {
 }
 
 function verificationTransactionUrl(transactionHash: string) {
-  return `${BRADBURY_EXPLORER_URL}transactions/${transactionHash}`;
+  return `${STUDIONET_EXPLORER_URL}tx/${transactionHash}`;
 }
 
 function formatDate(value: string | number) {
@@ -535,7 +534,7 @@ export function CredrepApp() {
   }) {
     if (!wallet) return;
     if (!networkReady) {
-      setNotice({ tone: "plain", text: "Switch your wallet to Bradbury first." });
+      setNotice({ tone: "plain", text: "Switch your wallet to StudioNet first." });
       return;
     }
     if (transactionInFlight) {
@@ -695,12 +694,12 @@ export function CredrepApp() {
     setNotice({ tone: "plain", text: "Wallet disconnected from this page." });
   }
 
-  async function changeToBradbury() {
+  async function changeToStudioNet() {
     setBusy("network");
     try {
-      await switchToBradbury();
+      await switchToStudioNet();
       setNetworkReady(true);
-      setNotice({ tone: "good", text: "Wallet switched to Bradbury." });
+      setNotice({ tone: "good", text: "Wallet switched to StudioNet." });
     } catch (error) {
       setNotice({
         tone: "bad",
@@ -713,11 +712,11 @@ export function CredrepApp() {
 
   function chooseMarket(market: SourcedMarket, prediction: "YES" | "NO") {
     if (!wallet) {
-      setNotice({ tone: "plain", text: "Connect your Bradbury wallet first." });
+      setNotice({ tone: "plain", text: "Connect your StudioNet wallet first." });
       return;
     }
     if (!networkReady) {
-      setNotice({ tone: "plain", text: "Switch your wallet to Bradbury first." });
+      setNotice({ tone: "plain", text: "Switch your wallet to StudioNet first." });
       return;
     }
     if (transactionInFlight) {
@@ -1009,10 +1008,10 @@ export function CredrepApp() {
         })();
       },
       onChainChanged(chainId) {
-        const ready = isBradburyChainId(chainId);
+        const ready = isStudioNetChainId(chainId);
         setNetworkReady(ready);
         if (!ready) {
-          setNotice({ tone: "plain", text: "Switch your wallet back to Bradbury to continue." });
+          setNotice({ tone: "plain", text: "Switch your wallet back to StudioNet to continue." });
         }
       },
     });
@@ -1137,7 +1136,7 @@ export function CredrepApp() {
           )}
           <button
             className="wallet-button"
-            onClick={wallet ? networkReady ? disconnectWallet : changeToBradbury : connectWallet}
+            onClick={wallet ? networkReady ? disconnectWallet : changeToStudioNet : connectWallet}
             disabled={Boolean(busy)}
             title={wallet && networkReady ? "Disconnect wallet" : undefined}
           >
@@ -1297,7 +1296,7 @@ export function CredrepApp() {
           <section className="community-section">
             <div className="community-header">
               <div>
-                <p className="eyebrow">BRADBURY READ MODEL</p>
+                <p className="eyebrow">STUDIONET READ MODEL</p>
                 <h2>Verified community record</h2>
                 <p>Only contract-confirmed REP, scores, and positions appear here.</p>
               </div>
@@ -1313,7 +1312,7 @@ export function CredrepApp() {
             {community && !community.leaderboard.length && (
               <div className="empty-state">
                 <h2>No indexed records yet</h2>
-                <p>Connect a verified wallet to add its public Bradbury record.</p>
+                <p>Connect a verified wallet to add its public StudioNet record.</p>
               </div>
             )}
             {community && community.leaderboard.length > 0 && (
@@ -1388,8 +1387,8 @@ export function CredrepApp() {
       </main>
 
       <footer>
-        <span>CREDREP · Bradbury testnet</span>
-        <div><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/support">Support</a><a href={BRADBURY_FAUCET_URL} target="_blank" rel="noreferrer">Faucet</a><a href={BRADBURY_EXPLORER_URL} target="_blank" rel="noreferrer">Explorer</a><a href={`${BRADBURY_EXPLORER_URL}address/${CREDENCE_CONTRACT_ADDRESS}`} target="_blank" rel="noreferrer">Contract</a></div>
+        <span>CREDREP · StudioNet</span>
+        <div><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/support">Support</a><a href={STUDIONET_EXPLORER_URL} target="_blank" rel="noreferrer">Explorer</a><a href={`${STUDIONET_EXPLORER_URL}address/${CREDREP_CONTRACT_ADDRESS}`} target="_blank" rel="noreferrer">Contract</a></div>
       </footer>
 
       {selectedMarket && (

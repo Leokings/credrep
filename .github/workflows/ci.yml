@@ -31,5 +31,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
-      - run: genvm-lint check contracts/credence_claims.py --json
+      - run: python scripts/build_contract_artifact.py
+      - run: git diff --exit-code -- contracts/credence_claims.deploy.py
+      - run: genvm-lint check contracts/credence_claims.deploy.py --json
       - run: pytest tests/direct -q

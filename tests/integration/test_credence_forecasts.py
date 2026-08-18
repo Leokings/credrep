@@ -41,7 +41,7 @@ def active_binary_market() -> dict:
 
 def test_live_polymarket_question_reaches_genlayer_consensus():
     source_market = active_binary_market()
-    factory = get_contract_factory(contract_file_path="credence_claims.py")
+    factory = get_contract_factory(contract_file_path="credence_claims.deploy.py")
     contract = factory.deploy(args=[100, 2_000], wait_retries=180)
 
     print(f"EVIDENCE market_id={source_market['id']}")
