@@ -1,56 +1,66 @@
-# CREDREP StudioNet integration evidence
+# CREDREP StudioNet production evidence
 
 ## Result
 
-**PASS** — the CREDREP intelligent contract deployed on GenLayer StudioNet,
-fetched a live binary Polymarket question through validator consensus, stored
-its canonical Polygon condition ID, and enforced a seven-day scheduled-upgrade
-window.
+**PASS** — the current CREDREP production contract completed a finalized
+dual-source identity binding and a finalized reputation-backed prediction on
+GenLayer StudioNet. Every transaction below executed with GenVM result
+`SUCCESS` and returned normally.
 
 | Field | Value |
 | --- | --- |
-| Run time | 2026-08-18T07:14:00-07:00 |
 | Network | `studionet` |
+| Chain ID | `61999` |
 | RPC | `https://studio.genlayer.com/api` |
 | Leader-only mode | `false` |
-| Test runner | `genlayer-test 0.29.2`, `pytest 9.1.1` |
-| Python | `3.12.13` |
 | Production contract | [`0xEB16133048b14a38A6C870409625bbFd0dE08780`](https://explorer-studio.genlayer.com/address/0xEB16133048b14a38A6C870409625bbFd0dE08780) |
 | Production deployment | [`0xbbac18675bfc8aaeb3ed9d621297c7faa7c77a7b2ac57d7e0553dcb065a6ffb4`](https://explorer-studio.genlayer.com/tx/0xbbac18675bfc8aaeb3ed9d621297c7faa7c77a7b2ac57d7e0553dcb065a6ffb4) |
-| Fresh production state | `0 users / 0 markets / 0 predictions` |
-| Live Polymarket market ID | `2252245` |
-| Disposable integration contract | `0x620b91820637d0f60BECF01F9537f7B740498c54` |
-| Integration sync transaction | `0x1217f371f8ee3e421b48090abc544f8ae42bc05a402fa37ace5d92a389d3666c` |
-| Leader execution result | `SUCCESS` |
-| Test duration | `89.35s` |
+| Evidence wallet | [`0x63038a310a46AC61A59c1bC5eAD5fe41040eF38e`](https://explorer-studio.genlayer.com/address/0x63038a310a46AC61A59c1bC5eAD5fe41040eF38e) |
+| Begin identity binding | [`0x82c9068c81395d31f20c9048d4e3412c920b926c2a4a94b21cb8cf67587c1d98`](https://explorer-studio.genlayer.com/tx/0x82c9068c81395d31f20c9048d4e3412c920b926c2a4a94b21cb8cf67587c1d98) |
+| Verify identity binding | [`0x7a1ca69396ece5d3d2c3683df9b3ef9834494b0fea9f9a27a8dc7562a70a6b3e`](https://explorer-studio.genlayer.com/tx/0x7a1ca69396ece5d3d2c3683df9b3ef9834494b0fea9f9a27a8dc7562a70a6b3e) |
+| Make prediction | [`0x60f0a69d5ebc4dec1be748bc28204eedb83aed561249543719648e7692fb3ca4`](https://explorer-studio.genlayer.com/tx/0x60f0a69d5ebc4dec1be748bc28204eedb83aed561249543719648e7692fb3ca4) |
+| Current protocol state | `1 user / 1 market / 1 prediction` |
 
-## Tested assertions
+## Verified production flow
 
-- Contract deployment completed with successful execution.
-- `sync_market` completed with successful leader execution under validator
-  consensus.
-- The stored question matched the live Polymarket response.
-- The stored market was `OPEN` and had a canonical Polymarket source URL.
-- The stored Polygon condition ID matched Gamma's market record.
-- The market exposed Polygon Conditional Tokens as its settlement source.
-- The permissionless void time was exactly 30 days after the market deadline.
-- Protocol statistics reported one synchronized market.
-- Governance reported a seven-day upgrade delay and no pending upgrade.
-- Scheduling a code hash succeeded, and its public execution time was exactly
-  seven days after scheduling.
-- Governance reported the 30-day stale-market timeout.
-- Direct regression coverage verifies Farcaster's 65-byte EIP-712 fname server
-  signature shape before identity activation.
+1. `begin_identity_binding` finalized successfully at
+   `2026-08-18T14:54:54.021930Z`.
+2. `verify_identity_binding` finalized successfully at
+   `2026-08-18T14:56:03.751096Z`.
+3. The contract bound X identity `@plain3rd` and Farcaster identity
+   `@milechain` to the evidence wallet and reported `dual_source_bound: true`,
+   `status: VERIFIED`, and `can_predict: true`.
+4. The account received 100 REP.
+5. `make_prediction` finalized successfully at
+   `2026-08-18T14:57:04.893419Z`.
+6. The position stored market ID `2252245`, prediction `NO`, 82% confidence,
+   and 1 REP at risk. The position is `OPEN`, leaving 99 REP available.
 
-## Reproduction command
+## Steward request addressed
 
-Run from the repository root after installing `requirements.txt`:
+The build directly addresses the three concerns in the steward request:
 
-```powershell
-gltest tests/integration/test_credence_forecasts.py -v -s --network studionet
-```
+- **Identity no longer depends on one upstream service.** A wallet must publish
+  the same contract-generated challenge on both X and Farcaster. GenLayer
+  validators independently read both proofs, bind one stable X ID and one
+  stable Farcaster FID to the wallet, and require monthly reverification.
+- **Settlement no longer depends on one upstream resolution service.** Gamma
+  supplies Polymarket market metadata, but it cannot settle REP by itself.
+  Resolution must match the Polygon Conditional Tokens payout state fetched
+  independently through `polygon.drpc.org` and `polygon.publicnode.com`.
+- **One authority cannot immediately replace the rules.** An upgrade must
+  first publish its code hash onchain and then wait seven days. Pending upgrade
+  details are publicly readable, and the proposal can be cancelled during the
+  delay.
 
-StudioNet is gasless, so this test does not require funded GEN.
+## Automated validation
+
+- GenVM lint passed for the readable source and exact deployment artifact.
+- `22` direct contract tests passed, including the Farcaster 65-byte EIP-712
+  signature regression test.
+- `10` production web and StudioNet receipt tests passed.
+- GitHub CI passed both contract and web jobs:
+  [`32150340717`](https://github.com/Leokings/credrep/actions/runs/32150340717).
 
 ## Source integrity
 
@@ -68,27 +78,14 @@ gltest.config.yaml
 SHA256 81E188ADC1A80EB56E9327BC5C5E6D60ECC7CDE3AA5CA320B04269D449CD453A
 ```
 
-## Captured output
+## Receipt verification
 
-```text
-============================= test session starts =============================
-platform win32 -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0
-plugins: anyio-4.14.2, genlayer-test-0.29.2
-collected 1 item
+Each current transaction can be independently checked with:
 
-tests/integration/test_credence_forecasts.py::test_live_polymarket_question_reaches_genlayer_consensus
-EVIDENCE market_id=2252245
-EVIDENCE contract_address=0x620b91820637d0f60BECF01F9537f7B740498c54
-EVIDENCE sync_transaction=0x1217f371f8ee3e421b48090abc544f8ae42bc05a402fa37ace5d92a389d3666c
-EVIDENCE sync_execution_result=SUCCESS
-PASSED
-
-======================== 1 passed in 89.35s (0:01:29) =========================
-INFO: File `gltest.config.yaml` found in the current directory, using it
-INFO: RPC URL: https://studio.genlayer.com/api
-INFO: Selected Network: studionet
-INFO: Leader only mode: False
+```powershell
+genlayer receipt <transaction-hash> --status FINALIZED --stdout --stderr
 ```
 
-This file records a point-in-time hosted-network run. The integration test and
-hashes above are the reproducible evidence.
+The linked StudioNet Explorer pages expose the method, sender, current
+contract, finalized lifecycle status, `SUCCESS` GenVM result, and accepted
+consensus result.
